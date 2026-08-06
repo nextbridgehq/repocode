@@ -1,0 +1,64 @@
+{
+  "name": "@repocode/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for RepoCode — expose AI-ready repository context tools to coding assistants via Model Context Protocol",
+  "keywords": [
+    "mcp",
+    "ai",
+    "context",
+    "llm",
+    "model-context-protocol",
+    "repocode",
+    "ai-assistant",
+    "llm-tools",
+    "coding-agent",
+    "repository-context"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nextbridgehq/repocode.git"
+  },
+  "homepage": "https://github.com/nextbridgehq/repocode",
+  "bugs": {
+    "url": "https://github.com/nextbridgehq/repocode/issues"
+  },
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "bin": {
+    "repocode-mcp": "./dist/bin.js"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@repocode/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "vitest": "^1.6.0"
+  }
+}

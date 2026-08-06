@@ -1,0 +1,15 @@
+node_modules/
+dist/
+out/
+docs/
+
+# generated pack output
+repocode-output.*
+
+# test coverage
+coverage/
+
+# env / secrets
+.env
+.env.local
+repocode-test-*

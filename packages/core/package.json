@@ -1,0 +1,73 @@
+{
+  "name": "@repocode/core",
+  "version": "0.1.0",
+  "description": "Core engine for RepoCode — repository analysis, ranking, token-budgeting, and AI-ready context assembly",
+  "keywords": [
+    "ai",
+    "context",
+    "llm",
+    "tokens",
+    "codebase",
+    "repocode",
+    "code-analysis",
+    "repository-analysis",
+    "code-intelligence",
+    "llm-context",
+    "token-optimization",
+    "context-engineering",
+    "developer-tools"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nextbridgehq/repocode.git"
+  },
+  "homepage": "https://github.com/nextbridgehq/repocode",
+  "bugs": {
+    "url": "https://github.com/nextbridgehq/repocode/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@secretlint/config-loader": "13.0.2",
+    "@secretlint/core": "13.0.2",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.2",
+    "chokidar": "^4.0.0",
+    "globby": "^14.0.0",
+    "ignore": "^5.3.0",
+    "istextorbinary": "^9.0.0",
+    "proper-lockfile": "4.1.2",
+    "tiktoken": "^1.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/proper-lockfile": "4.1.4",
+    "@vitest/coverage-v8": "^1.6.0",
+    "vitest": "^1.6.0"
+  }
+}
