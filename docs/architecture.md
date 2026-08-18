@@ -62,7 +62,7 @@ packages/core/src/
 │   └── ignoreRules.ts      buildIgnoreFilter() — gitignore-style predicate
 ├── ranking/
 │   ├── pass1Ranker.ts      Structural signals: extension tier, depth, size, keywords, recency
-│   ├── pass2Ranker.ts      Token-density ranking for budget-fitting phase
+│   ├── pass2Ranker.ts      Blends token-density with import-graph centrality for budget-fitting
 │   ├── graphBuilder.ts     buildGraph() — static import graph (TS/JS/Python/Go)
 │   └── signals.ts          Individual signal scorers
 ├── query/

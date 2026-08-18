@@ -8,8 +8,9 @@
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0",
-    "@vitest/coverage-v8": "^1.6.0"
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
   }
 }
