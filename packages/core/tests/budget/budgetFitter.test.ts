@@ -128,12 +128,17 @@ describe('budgetFitter cascade', () => {
   it('compressionLevel is "tier1-regex" when whole does not fit but tier1 does', async () => {
     const content = makeTieredContent();
     const { compressTier1 } = await import('../../src/budget/compression.js');
-    const t1 = compressTier1(content, 'typescript');
-    const wholeTokens = estimateFast(content);
-    const t1Tokens = estimateFast(t1);
+    const { estimateAccurateBatch } = await import('../../src/tokens/accurateEstimator.js');
+    const file = makeRanked('src/f.ts', content, 0.9);
+
+    // The uncompressed option is measured with tiktoken, so "does not fit" has to be stated
+    // in accurate tokens. On this content the fast estimate overshoots by ~30%, and a budget
+    // derived from it would exclude a file that genuinely fits.
+    const accurate = await estimateAccurateBatch([file.absolutePath], undefined, undefined);
+    const wholeTokens = accurate.get(file.absolutePath) ?? estimateFast(content);
+    const t1Tokens = estimateFast(compressTier1(content, 'typescript'));
     if (t1Tokens >= wholeTokens - 1) return; // can't test this with current content
 
-    const file = makeRanked('src/f.ts', content, 0.9);
     const budget = wholeTokens - 1; // too small for whole, big enough for tier1
     const { included } = await fitToBudget([file],
       { pinned: [], compress: 'partial' },

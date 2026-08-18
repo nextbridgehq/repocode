@@ -14,6 +14,7 @@ export function rankPass1(
   config: RankingConfig
 ): RankedFile[] {
   const maxSize = Math.max(...files.map(f => f.size), 1);
+  const now = Date.now();
 
   return files
     .map(f => {
@@ -23,7 +24,7 @@ export function rankPass1(
         size:       sizeScore(f.size, maxSize),
         extension:  extensionScore(f.path),
         keyword:    keywordScore(f.path, config.keywords),
-        recency:    recencyScore(f.mtime),
+        recency:    recencyScore(f.mtime, now),
       };
       let score =
         signals.structural * WEIGHTS.structural +
@@ -38,7 +39,10 @@ export function rankPass1(
 
       return { ...f, score, signalScores: signals };
     })
-    .sort((a, b) => b.score - a.score);
+    // Ties are common (sizeScore saturates near 1.0 for most files), and a stable sort would
+    // leave them ordered by discovery order. Break ties on path so ranking depends only on
+    // the file set, never on the order it arrived in.
+    .sort((a, b) => (b.score - a.score) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 function median(nums: number[]): number {
@@ -50,12 +54,24 @@ function median(nums: number[]): number {
     : sorted[mid];
 }
 
+/** Candidates to consider, as a multiple of how many median-sized files would fit in the
+ *  budget *uncompressed*.
+ *
+ *  These used to run 2.5-6.0, on the premise that compression lets us usefully carry several
+ *  times more files than would otherwise fit. Measured, that premise fails: at ~5x the fitter
+ *  admits ~300 files and upgrades almost none, so gold files arrive as signatures retaining
+ *  ~11% of their content — present in the output, useless for the task. Recall measured on
+ *  delivered content peaks below 1.0 and collapses to zero above ~2x.
+ *
+ *  Below 1.0 means "consider fewer files than would fit whole", which leaves the fitter
+ *  headroom to include larger-than-median files intact rather than shaving everything down
+ *  to fit one more entry. */
 const COMPRESS_MULTIPLIER: Record<CompressionLevel, number> = {
-  'none':             1.2,
-  'tier1-regex':      2.0,
-  'tier2-structural': 2.5,
-  'tier3-llm':        4.0,
-  'partial':          3.0,
+  'none':             0.5,
+  'tier1-regex':      0.6,
+  'tier2-structural': 0.7,
+  'tier3-llm':        0.8,
+  'partial':          0.8,
 };
 
 function effectiveMultiplier(config: CompressConfig): number {
@@ -77,9 +93,16 @@ export function selectCandidates(
   const unpinned   = ranked.filter(f => !pinnedSet.has(f.path));
 
   const medianTokens = Math.max(median(unpinned.map(f => f.size / 4)), 1);
+  // At least one candidate whenever there is anything to consider. The multipliers are below
+  // 1.0, so a budget smaller than ~1.25 median files floors to zero — which would return an
+  // empty pack and report every file as 'below-candidate-cut', hiding the real reason (the
+  // file is simply larger than the budget) behind an artefact of rounding.
   let candidateCount = Math.min(
     unpinned.length,
-    Math.floor((effectiveBudget / medianTokens) * effectiveMultiplier(compress))
+    Math.max(
+      unpinned.length > 0 ? 1 : 0,
+      Math.floor((effectiveBudget / medianTokens) * effectiveMultiplier(compress)),
+    )
   );
 
   if (maxCandidates !== undefined && candidateCount > maxCandidates) {

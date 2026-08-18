@@ -36,6 +36,14 @@ export function resolveIgnorePatterns(root: string, config: IgnoreConfig): strin
     patterns.push(...fs.readFileSync(ccignorePath, 'utf-8').split('\n').map(l => l.trim()).filter(Boolean));
   }
 
+  // Honour .repomixignore too. It is gitignore syntax and states which files the author does
+  // not want packed — a preference that does not change with the tool reading it. Trying
+  // RepoCode in a repo already set up for Repomix should not require re-declaring exclusions.
+  const repomixIgnorePath = path.join(root, '.repomixignore');
+  if (fs.existsSync(repomixIgnorePath)) {
+    patterns.push(...fs.readFileSync(repomixIgnorePath, 'utf-8').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')));
+  }
+
   if (config.customPatterns.length > 0) {
     patterns.push(...config.customPatterns);
   }

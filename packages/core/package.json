@@ -1,6 +1,6 @@
 {
   "name": "@repocode/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Core engine for RepoCode — repository analysis, ranking, token-budgeting, and AI-ready context assembly",
   "keywords": [
     "ai",
@@ -41,7 +41,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "publishConfig": {
     "access": "public"
@@ -67,7 +67,7 @@
   "devDependencies": {
     "@types/node": "^26.0.0",
     "@types/proper-lockfile": "4.1.4",
-    "@vitest/coverage-v8": "^1.6.0",
-    "vitest": "^1.6.0"
+    "@vitest/coverage-v8": "^4.1.10",
+    "vitest": "^4.1.10"
   }
 }

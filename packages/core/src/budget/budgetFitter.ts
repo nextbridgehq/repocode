@@ -40,14 +40,6 @@ export async function fitToBudget(
   options: FitOptions,
   budget: TokenBudget,
 ): Promise<{ included: BudgetFile[]; excluded: ExcludedFile[] }> {
-  type Candidate = RankedFile & {
-    content: string;
-    tokens: number;
-    compressed: boolean;
-    compressionLevel: CompressionLevel;
-    rankPosition: number;
-  };
-  const included: Candidate[] = [];
   const excluded: ExcludedFile[] = [];
   const pinnedSet = new Set(options.pinned);
   const processedPaths = new Set<string>();
@@ -77,12 +69,63 @@ export async function fitToBudget(
 
   const readResults = await Promise.all(readTasks);
 
-  // Phase 2: Sequential Budget Decision
+  // A file can be rendered at several compression levels; each is a (cost, fidelity) option
+  // rather than a fallback only reached when the whole file will not fit.
+  interface Repr { level: CompressionLevel; content: string; tokens: number }
+
+  /** Every representation `file` is allowed to take, ordered by fidelity — richest ('none')
+   *  first. Cost is tracked separately because a cheaper representation is not always a more
+   *  compressed one: on small files several tiers collapse to the same token count, and
+   *  ordering by cost would make "upgrade" walk into heavier compression for no saving. */
+  function buildReprs(content: string, file: RankedFile, ceiling: CompressionLevel): Repr[] {
+    const reprs: Repr[] = [{ level: 'none', content, tokens: estimateFast(content) }];
+    const maxLevel = levelIndex(ceiling);
+
+    if (maxLevel >= levelIndex('tier1-regex')) {
+      const t1 = compressTier1(content, file.language);
+      reprs.push({ level: 'tier1-regex', content: t1, tokens: estimateFast(t1) });
+
+      if (maxLevel >= levelIndex('tier2-structural')) {
+        const t2 = compressTier2(t1, file.language);
+        reprs.push({ level: 'tier2-structural', content: t2, tokens: estimateFast(t2) });
+
+        if (maxLevel >= levelIndex('partial')) {
+          const partial = extractPartial(t2, file.language, file.hunks);
+          reprs.push({ level: 'partial', content: partial, tokens: estimateFast(partial) });
+        }
+      }
+    }
+
+    return reprs.sort((a, b) => levelIndex(a.level) - levelIndex(b.level));
+  }
+
+  /** Index of the cheapest representation. Ties resolve to the richest, since `reprs` runs
+   *  richest first and only a strict improvement moves the choice. */
+  function cheapestIndex(reprs: Repr[]): number {
+    let best = 0;
+    for (let i = 1; i < reprs.length; i++) {
+      if (reprs[i].tokens < reprs[best].tokens) best = i;
+    }
+    return best;
+  }
+
+  // Phase 2: admit files at their cheapest allowed representation.
+  //
+  // Selection cost must not depend on how much budget happens to be left when a file is
+  // reached. Choosing "whole file if it currently fits" made a file's cost a function of the
+  // budget, so raising the budget let a large file in whole — swallowing many times what the
+  // increase provided and evicting files a smaller budget had comfortably included. Admitting
+  // everything at a fixed, cheap cost makes the set of included files depend only on rank, so
+  // a larger budget can add files but never lose them.
+  type Selection = { file: RankedFile; reprs: Repr[]; reprIndex: number; rankPosition: number };
+  const selected: Selection[] = [];
   let rankPosition = 0;
 
   for (const { file, content, error } of readResults) {
+    const isPinned = pinnedSet.has(file.path);
+
     // Early exit: remaining budget too small to be useful.
-    if (remaining < MIN_USEFUL_REMAINING_TOKENS && budget.effectiveBudget >= MIN_USEFUL_REMAINING_TOKENS && !pinnedSet.has(file.path)) break;
+    if (remaining < MIN_USEFUL_REMAINING_TOKENS && budget.effectiveBudget >= MIN_USEFUL_REMAINING_TOKENS && !isPinned) break;
     processedPaths.add(file.path);
 
     rankPosition++;
@@ -99,105 +142,65 @@ export async function fitToBudget(
       continue;
     }
 
-    const fastTokens = estimateFast(content);
+    // Pinned files always use the full ceiling regardless of options.compress
+    const ceiling = isPinned ? 'partial' : getCompressionTier(rankPosition, options.compress);
+    const reprs = buildReprs(content, file, ceiling);
 
-    // Level 1: try whole file
-    if (fastTokens <= remaining) {
-      included.push({ ...file, content, tokens: fastTokens, compressed: false, compressionLevel: 'none', rankPosition });
-      remaining -= fastTokens;
-      continue;
-    }
-
-    // Cascade: pinned files always use the full ceiling regardless of options.compress
-    const ceiling = pinnedSet.has(file.path)
-      ? 'partial'
-      : getCompressionTier(rankPosition, options.compress);
-    const maxLevel = levelIndex(ceiling);
-
-    let fittedContent = content;
-    let fittedTokens = fastTokens;
-    let compressionLevel: CompressionLevel = 'none';
-    let fitted = false;
-
-    // Level 2: Tier 1 — strip comments
-    if (!fitted && maxLevel >= levelIndex('tier1-regex')) {
-      const t1 = compressTier1(content, file.language);
-      const t1Tokens = estimateFast(t1);
-      if (t1Tokens <= remaining) {
-        fittedContent = t1; fittedTokens = t1Tokens; compressionLevel = 'tier1-regex'; fitted = true;
-      } else {
-        // Pass Tier 1 output to Tier 2 (cumulative)
-        fittedContent = t1;
-
-        // Level 3: Tier 2 — strip function bodies (operates on Tier 1 output)
-        if (!fitted && maxLevel >= levelIndex('tier2-structural')) {
-          const t2 = compressTier2(fittedContent, file.language);
-          const t2Tokens = estimateFast(t2);
-          if (t2Tokens <= remaining) {
-            fittedContent = t2; fittedTokens = t2Tokens; compressionLevel = 'tier2-structural'; fitted = true;
-          } else {
-            // Pass Tier 2 output forward (cumulative)
-            fittedContent = t2;
-
-            // Level 3.5: Tier 3 — LLM semantic summary (operates on tier1+tier2 output)
-            if (!fitted && maxLevel >= levelIndex('tier3-llm') && options.llmProvider) {
-              const { llmCompress } = await import('../compression/llmCompressor.js');
-              // Pre-redact secrets before sending to LLM and before caching the hash.
-              // Redaction happens after tier2 so compressors operate on clean code.
-              let t3Input = fittedContent;
-              if (options.securityMode === 'redact') {
-                const scan = await scanForSecrets(file.path, t3Input, 'redact');
-                if (scan.redactedContent) {
-                  t3Input = scan.redactedContent;
-                }
-              }
-              const t3 = await llmLimit(async () => {
-                await new Promise(resolve => setTimeout(resolve, 200));
-                return llmCompress(
-                  t3Input,
-                  file.path,
-                  options.llmProvider!,
-                  options.llmCache,
-                  options.llmBudgetTokens,
-                );
-              });
-              if (t3 !== t3Input) {
-                // llmCompress returned a summary (not the cost-guard passthrough)
-                const t3Tokens = estimateFast(t3);
-                if (t3Tokens <= remaining) {
-                  fittedContent = t3; fittedTokens = t3Tokens; compressionLevel = 'tier3-llm'; fitted = true;
-                }
-              }
-            }
-
-            // Level 4: Partial — extract signatures + relevant sections
-            if (!fitted && maxLevel >= levelIndex('partial')) {
-              const partial = extractPartial(fittedContent, file.language, file.hunks);
-              const partialTokens = estimateFast(partial);
-              if (partialTokens <= remaining) {
-                fittedContent = partial; fittedTokens = partialTokens; compressionLevel = 'partial'; fitted = true;
-              }
-            }
-          }
+    // Tier 3 costs real API spend, so it is never computed speculatively — only for a file
+    // that will not fit even at its cheapest local representation.
+    if (reprs[cheapestIndex(reprs)].tokens > remaining
+        && levelIndex(ceiling) >= levelIndex('tier3-llm') && options.llmProvider) {
+      const base = reprs.find(r => r.level === 'tier2-structural') ?? reprs[0];
+      // Pre-redact secrets before sending to LLM and before caching the hash.
+      // Redaction happens after tier2 so compressors operate on clean code.
+      let t3Input = base.content;
+      if (options.securityMode === 'redact') {
+        const scan = await scanForSecrets(file.path, t3Input, 'redact');
+        if (scan.redactedContent) {
+          t3Input = scan.redactedContent;
         }
+      }
+      const { llmCompress } = await import('../compression/llmCompressor.js');
+      const t3 = await llmLimit(async () => {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        return llmCompress(
+          t3Input,
+          file.path,
+          options.llmProvider!,
+          options.llmCache,
+          options.llmBudgetTokens,
+        );
+      });
+      // llmCompress returns its input unchanged when the cost guard trips
+      if (t3 !== t3Input) {
+        reprs.push({ level: 'tier3-llm', content: t3, tokens: estimateFast(t3) });
+        reprs.sort((a, b) => levelIndex(a.level) - levelIndex(b.level));
       }
     }
 
-    if (fitted) {
-      included.push({ ...file, content: fittedContent, tokens: fittedTokens, compressed: true, compressionLevel, rankPosition });
-      remaining -= fittedTokens;
-    } else if (pinnedSet.has(file.path)) {
-      // Level 5: pinned force-include — whole file regardless of budget
-      included.push({ ...file, content, tokens: fastTokens, compressed: false, compressionLevel: 'none', rankPosition });
-      remaining -= fastTokens;
+    const startIndex = cheapestIndex(reprs);
+    if (reprs[startIndex].tokens <= remaining) {
+      selected.push({ file, reprs, reprIndex: startIndex, rankPosition });
+      remaining -= reprs[startIndex].tokens;
+    } else if (isPinned) {
+      // Pinned force-include — whole file regardless of budget
+      const whole = reprs.findIndex(r => r.level === 'none');
+      selected.push({ file, reprs, reprIndex: whole, rankPosition });
+      remaining -= reprs[whole].tokens;
     } else {
-      const reason = maxLevel > levelIndex('none')
-        ? 'exceeds-budget-after-compression' as const
-        : 'exceeds-budget' as const;
-      excluded.push({ path: file.path, reason });
+      excluded.push({
+        path: file.path,
+        reason: levelIndex(ceiling) > levelIndex('none')
+          ? 'exceeds-budget-after-compression'
+          : 'exceeds-budget',
+      });
     }
   }
 
+  // Phase 3: spend what is left upgrading files toward richer representations. One step per
+  // file per pass, in rank order, so leftover budget spreads across the selection instead of
+  // the highest-ranked file absorbing all of it. Upgrades never evict, so the included set is
+  // still exactly what phase 2 chose.
   // Files not reached due to early exit
   for (const file of ordered) {
     if (!processedPaths.has(file.path)) {
@@ -205,40 +208,70 @@ export async function fitToBudget(
     }
   }
 
-  // Accurate token count for included files.
-  // We use tiktoken for uncompressed files where the content on disk is unchanged.
-  // For compressed files the on-disk content is the original (larger) file, so we use
-  // the fast estimate of the compressed content computed during fitting.
+  // Accurate token counts. tiktoken can only measure what is on disk, so it applies to the
+  // uncompressed representation; compressed ones keep the fast estimate made while fitting.
   const accurateMap = await estimateAccurateBatch(
-    included.filter(f => !f.compressed).map(f => f.absolutePath),
+    selected.map(e => e.file.absolutePath),
     options.cache,
     options.root,
   );
+  const accurateFor = (entry: Selection, index: number): number => {
+    const repr = entry.reprs[index];
+    return repr.level === 'none'
+      ? accurateMap.get(entry.file.absolutePath) ?? repr.tokens
+      : repr.tokens;
+  };
 
-  let budgetFiles: BudgetFile[] = included.map(f => {
-    const diskTokens = f.compressed
-      ? undefined  // disk has original content, not compressed — don't use it
-      : accurateMap.get(f.absolutePath);
-    return {
-      ...f,
-      accurateTokens: diskTokens ?? f.tokens,
-    };
-  });
-
-  // Correction loop: drop lowest-ranked (non-pinned) file when total exceeds budget.
-  // Uses accurateTokens for the comparison. Pinned files are never dropped.
-  let accurateTotal = budgetFiles.reduce((s, f) => s + f.accurateTokens, 0);
-  while (accurateTotal > budget.effectiveBudget && budgetFiles.length > 0) {
-    // Find last non-pinned file to drop (budgetFiles is in ranked order: highest score first)
-    let dropIdx = budgetFiles.length - 1;
-    while (dropIdx >= 0 && pinnedSet.has(budgetFiles[dropIdx].path)) {
+  // Correction loop: drop lowest-ranked (non-pinned) file when the accurate total exceeds
+  // budget. Runs on the base selection, before any upgrade is applied, so that the set of
+  // included files is settled purely by rank and cheapest cost. Pinned files are never
+  // dropped.
+  let accurateTotal = selected.reduce((s, e) => s + accurateFor(e, e.reprIndex), 0);
+  while (accurateTotal > budget.effectiveBudget && selected.length > 0) {
+    let dropIdx = selected.length - 1; // selected is in ranked order: highest score first
+    while (dropIdx >= 0 && pinnedSet.has(selected[dropIdx].file.path)) {
       dropIdx--;
     }
     if (dropIdx < 0) break; // all remaining files are pinned; can't drop any
-    const [dropped] = budgetFiles.splice(dropIdx, 1);
-    excluded.push({ path: dropped.path, reason: 'exceeds-budget' });
-    accurateTotal -= dropped.accurateTokens;
+    const [dropped] = selected.splice(dropIdx, 1);
+    excluded.push({ path: dropped.file.path, reason: 'exceeds-budget' });
+    accurateTotal -= accurateFor(dropped, dropped.reprIndex);
   }
+
+  // Phase 3: spend what is left upgrading files toward richer representations. One step per
+  // file per pass, in rank order, so leftover budget spreads across the selection instead of
+  // the highest-ranked file absorbing all of it. This runs after the correction loop and
+  // measures upgrades in accurate tokens, so an upgrade can never push the total over budget
+  // and evict a file that the smaller budget had comfortably included.
+  let headroom = budget.effectiveBudget - accurateTotal;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const entry of selected) {
+      const next = entry.reprIndex - 1; // reprs run richest first
+      if (next < 0) continue;
+      const delta = accurateFor(entry, next) - accurateFor(entry, entry.reprIndex);
+      if (delta <= headroom) {
+        headroom -= delta;
+        entry.reprIndex = next;
+        changed = true;
+      }
+    }
+  }
+
+  const budgetFiles: BudgetFile[] = selected.map(({ file, reprs, reprIndex, rankPosition: rank }) => {
+    const repr = reprs[reprIndex];
+    return {
+      ...file,
+      content: repr.content,
+      tokens: repr.tokens,
+      compressed: repr.level !== 'none',
+      compressionLevel: repr.level,
+      rankPosition: rank,
+      accurateTokens: repr.level === 'none'
+        ? accurateMap.get(file.absolutePath) ?? repr.tokens
+        : repr.tokens,
+    };
+  });
 
   return { included: budgetFiles, excluded };
 }

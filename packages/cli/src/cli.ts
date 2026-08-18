@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
@@ -14,61 +14,83 @@ const { version } = JSON.parse(
 
 const program = new Command();
 
+/**
+ * `--help` shows only these; everything else needs `--help-advanced`. Nothing is removed —
+ * every hidden flag still works exactly as documented, it just doesn't compete for attention
+ * on a screen a first-time user is skimming. The set mirrors the README quickstart plus the
+ * two flags that carry this tool's actual differentiators (--stable-order for cache stability,
+ * --explain for the debug loop a new user reaches for first).
+ */
+function advanced(flags: string, description: string, defaultValue?: string): Option {
+  const opt = new Option(flags, description).hideHelp();
+  return defaultValue !== undefined ? opt.default(defaultValue) : opt;
+}
+
 program
   .name('repocode')
   .description('Intelligent repository context engine for AI-assisted development')
   .version(version)
   .argument('[path]', 'Repository path to pack', '.')
   .option('-b, --budget <tokens>', 'Token budget (e.g. 50k, 100000)')
-  .option('--no-budget', 'Disable token budget — include all files')
+  .option('--model <name>', 'Size the budget for a model\'s context window, leaving room for its reply (e.g. claude-opus-5, gpt-5.6, gemini-2.5-pro). --budget wins if both are given')
   .option('-f, --format <format>', 'Output format: xml|markdown|plain|json')
   .option('-o, --output <file>', 'Output file path (default: repocode-output.<ext>)')
   .option('--stdout', 'Write output to stdout instead of a file')
-  .option('--copy', 'Copy output to clipboard')
   .option('--include <patterns...>', 'Include glob patterns')
   .option('-e, --exclude <patterns...>', 'Exclude glob patterns')
-  .option('--no-security', 'Disable secret scanning')
-  .option('--security-mode <mode>', 'Secret handling: warn|exclude|redact|fail', 'warn')
   .option('--compress <level>', 'Compression ceiling: none|tier1|tier2|tier3-llm|partial (default: partial)')
-  .option('--no-compress', 'Disable all compression (alias for --compress none)')
-  .option('--pin <paths...>', 'Always include these files (bypass candidate cut)')
-  .option('--header <text>', 'Custom header text prepended to output')
-  .option('--no-preamble', 'Omit AI preamble from output')
-  .option('--max-file-size <size>', 'Skip files larger than this (e.g. 500k, 2m)')
-  .option('--dry-run', 'Show what would be packed without writing output')
+  .option('--stable-order', 'Emit files in the order they were emitted last run, appending new ones at the end, so an unchanged prefix stays byte-identical and prompt caches hit across repacks')
   .option('--explain', 'Print ranked file table to stderr and exit (implies --dry-run)')
-  .option('--verbose', 'Show all excluded files in summary')
-  .option('--init', 'Create a repocode.config.json in the current directory')
   .option('--diff', 'Uncommitted working-tree changes (staged + unstaged + untracked)')
-  .option('--staged', 'Staged changes only')
-  .option('--branch <name>', 'Diff of <name> vs auto-detected base branch')
-  .option('--log <n>', 'Files touched in last n commits')
-  .option('--range <from..to>', 'Files changed in a commit range (e.g. HEAD~3..HEAD)')
-  .option('--pr', 'Auto-detect PR base from CI env or remote HEAD')
-  .option('--base <branch>', 'Override base branch for --branch / --pr')
-  .option('--no-deps', 'Disable import tracing for git modes (default: enabled)')
-  .option('--remote <owner/repo>', 'Pack a GitHub repo without cloning (e.g. owner/repo or a GitHub URL)')
-  .option('--remote-branch <branch>', 'Branch to fetch with --remote (default: the repo\'s default branch)')
-  .option('--remote-token <token>', 'GitHub token for --remote (overrides GITHUB_TOKEN env var)')
-  .option('--stdin', 'Read a newline-separated file list from stdin instead of discovering files')
-  .option('--graph-depth <n>', 'Import graph depth for transitive tracing and centrality scoring (default: 2; set to 0 to disable)')
   .option('--query <text>', 'Re-rank files by relevance to this query')
-  .option('--query-mode <mode>', 'Query mode: keyword|semantic (default: keyword)')
-  .option('--instruction <name>', 'Use a named instruction from the library')
-  .option('--instruction-file <path>', 'Include instruction text from this file')
-  .option('--instruction-text <text>', 'Use literal text as the instruction')
-  .option('--list-instructions', 'List available instructions and exit')
-  .option('--llm-provider <name>', 'LLM provider: openai|anthropic|ollama|custom')
-  .option('--llm-model <name>', 'Model name for the LLM provider')
-  .option('--llm-budget-tokens <n>', 'Max tokens per file for LLM compression (default: 8000)')
-  .option('-i, --interactive', 'Open interactive TUI for file selection')
-  .option('-w, --watch', 'Watch for file changes and keep the output file up to date')
-  .option('--profile <name>', 'Load named profile in interactive mode (requires -i)')
-  .option('--preset <name>', 'Activate a named preset from repocode.config.json or built-in')
-  .option('--list-presets', 'List available presets and exit')
-  .option('--save-preset <name>', 'Save current CLI flags as a named preset and exit')
+  .addOption(advanced('--help-advanced', 'Show every flag, including the ones --help omits'))
+  .addOption(advanced('--no-budget', 'Disable token budget — include all files'))
+  .addOption(advanced('--copy', 'Copy output to clipboard'))
+  .addOption(advanced('--no-security', 'Disable secret scanning'))
+  .addOption(advanced('--security-mode <mode>', 'Secret handling: warn|exclude|redact|fail', 'warn'))
+  .addOption(advanced('--no-compress', 'Disable all compression (alias for --compress none)'))
+  .addOption(advanced('--pin <paths...>', 'Always include these files (bypass candidate cut)'))
+  .addOption(advanced('--header <text>', 'Custom header text prepended to output'))
+  .addOption(advanced('--no-preamble', 'Omit AI preamble from output'))
+  .addOption(advanced('--from-repomix', 'Translate an existing repomix.config.json into RepoCode settings and use them for this run. Prints what could not be translated. .repomixignore is always honoured, with or without this flag'))
+  .addOption(advanced('--max-file-size <size>', 'Skip files larger than this (e.g. 500k, 2m)'))
+  .addOption(advanced('--dry-run', 'Show what would be packed without writing output'))
+  .addOption(advanced('--verbose', 'Show all excluded files in summary'))
+  .addOption(advanced('--init', 'Create a repocode.config.json in the current directory'))
+  .addOption(advanced('--staged', 'Staged changes only'))
+  .addOption(advanced('--branch <name>', 'Diff of <name> vs auto-detected base branch'))
+  .addOption(advanced('--log <n>', 'Files touched in last n commits'))
+  .addOption(advanced('--range <from..to>', 'Files changed in a commit range (e.g. HEAD~3..HEAD)'))
+  .addOption(advanced('--pr', 'Auto-detect PR base from CI env or remote HEAD'))
+  .addOption(advanced('--base <branch>', 'Override base branch for --branch / --pr'))
+  .addOption(advanced('--no-deps', 'Disable import tracing for git modes (default: enabled)'))
+  .addOption(advanced('--remote <owner/repo>', 'Pack a GitHub repo without cloning (e.g. owner/repo or a GitHub URL)'))
+  .addOption(advanced('--remote-branch <branch>', 'Branch to fetch with --remote (default: the repo\'s default branch)'))
+  .addOption(advanced('--remote-token <token>', 'GitHub token for --remote (overrides GITHUB_TOKEN env var)'))
+  .addOption(advanced('--stdin', 'Read a newline-separated file list from stdin instead of discovering files'))
+  .addOption(advanced('--graph-depth <n>', 'Import graph depth for transitive tracing and centrality scoring (default: 2; set to 0 to disable)'))
+  .addOption(advanced('--max-candidates <n>', 'Cap how many ranked files are considered for packing. Fewer candidates means more budget per file, so each is included at higher fidelity; more candidates means broader but shallower coverage'))
+  .addOption(advanced('--query-mode <mode>', 'Query mode: keyword|semantic (default: keyword)'))
+  .addOption(advanced('--instruction <name>', 'Use a named instruction from the library'))
+  .addOption(advanced('--instruction-file <path>', 'Include instruction text from this file'))
+  .addOption(advanced('--instruction-text <text>', 'Use literal text as the instruction'))
+  .addOption(advanced('--list-instructions', 'List available instructions and exit'))
+  .addOption(advanced('--llm-provider <name>', 'LLM provider: openai|anthropic|ollama|custom'))
+  .addOption(advanced('--llm-model <name>', 'Model name for the LLM provider'))
+  .addOption(advanced('--llm-budget-tokens <n>', 'Max tokens per file for LLM compression (default: 8000)'))
+  .addOption(advanced('-i, --interactive', 'Open interactive TUI for file selection'))
+  .addOption(advanced('-w, --watch', 'Watch for file changes and keep the output file up to date'))
+  .addOption(advanced('--profile <name>', 'Load named profile in interactive mode (requires -i)'))
+  .addOption(advanced('--preset <name>', 'Activate a named preset from repocode.config.json or built-in'))
+  .addOption(advanced('--list-presets', 'List available presets and exit'))
+  .addOption(advanced('--save-preset <name>', 'Save current CLI flags as a named preset and exit'))
   .hook('preAction', (thisCommand) => {
     const opts = thisCommand.opts();
+    if (opts.helpAdvanced) {
+      for (const opt of thisCommand.options) opt.hidden = false;
+      thisCommand.outputHelp();
+      process.exit(0);
+    }
     if (opts.instruction && (opts.instruction.includes('/') || opts.instruction.includes('\\') || opts.instruction.endsWith('.md') || opts.instruction.endsWith('.txt'))) {
       process.stderr.write('[repocode] warning: --instruction <file> is deprecated. Use --instruction-file <path> instead.\n');
       opts.instructionFile = opts.instruction;
@@ -149,6 +171,7 @@ program
       }
     }
   })
+  .addHelpText('after', '\nRun with --help-advanced to see every flag (git modes, LLM compression, presets, and more).')
   .action(async (targetPath: string, opts, command) => {
     const optionSource = (key: string) => command.getOptionValueSource(key);
 

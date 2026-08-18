@@ -1,6 +1,6 @@
 {
   "name": "@repocode/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for RepoCode — expose AI-ready repository context tools to coding assistants via Model Context Protocol",
   "keywords": [
     "mcp",
@@ -41,7 +41,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "publishConfig": {
     "access": "public"
@@ -53,12 +53,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@repocode/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@repocode/core": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
-    "vitest": "^1.6.0"
+    "vitest": "^4.1.10"
   }
 }

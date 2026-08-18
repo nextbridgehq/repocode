@@ -22,6 +22,19 @@ describe('discoverFiles', () => {
     expect(paths.some(p => p.includes('node_modules'))).toBe(false);
   });
 
+  it('returns files in a stable path-sorted order', async () => {
+    const opts = {
+      root: FIXTURE,
+      include: [],
+      exclude: [],
+      ignore: { useGitignore: true, useDefaultPatterns: true, customPatterns: [] },
+      maxFileSizeBytes: 1_000_000,
+    };
+    const paths = (await discoverFiles(opts)).map(f => f.path);
+
+    expect(paths).toEqual([...paths].sort());
+  });
+
   it('sets isBinary false for .ts files', async () => {
     const files = await discoverFiles({
       root: FIXTURE,

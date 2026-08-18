@@ -48,3 +48,20 @@ describe('buildIgnoreFilter', () => {
     expect(patterns).toContain('.git/**');
   });
 });
+
+describe('ignoreRules — Repomix interop', () => {
+  it('honours .repomixignore so a Repomix user need not re-declare exclusions', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-repomixignore-'));
+    try {
+      fs.writeFileSync(path.join(root, '.repomixignore'), '# generated\nbuild/**\n*.snap\n');
+      const filter = await buildIgnoreFilter(root, {
+        useGitignore: false, useDefaultPatterns: false, customPatterns: [],
+      });
+      expect(filter('build/out.js')).toBe(false);
+      expect(filter('src/a.test.ts.snap')).toBe(false);
+      expect(filter('src/a.ts')).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

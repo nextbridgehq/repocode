@@ -18,6 +18,17 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** Poll until `predicate` holds, or give up after `timeoutMs`.
+ *
+ *  A fixed sleep is the wrong tool for "the debounced repack has landed": it encodes a guess
+ *  about how fast the machine is. Under a loaded full-suite run that guess fails while the
+ *  behaviour under test is perfectly correct. Waiting for the condition keeps the assertion
+ *  honest and lets a genuine failure still surface, as a timeout. */
+async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) await wait(10);
+}
+
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-watch-'));
 });
@@ -64,7 +75,12 @@ describe('startWatch', () => {
     await wait(20);
     write('a.ts', 'export const a = 4;\n');
 
-    await wait(300); // past the 100ms debounce window
+    // Two things are being asserted, and they need different waits. That the debounced repack
+    // happens at all is a positive outcome, so wait for it rather than for a fixed duration.
+    await waitFor(() => repacks.length >= 2);
+    // That the three writes collapsed into *one* repack is a negative outcome, so it needs a
+    // settle window: give any extra repacks well past the 100ms debounce to show up.
+    await wait(300);
     expect(repacks.length).toBe(2); // initial + exactly one debounced repack
     await handle.stop();
   });

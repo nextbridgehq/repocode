@@ -5,11 +5,12 @@ import { execSync } from 'child_process';
 import type { RepoCodeConfig, PackResult, TokenBudget, ExcludedFile, TUIFile, TUIPipelineResult, CompressConfig, BudgetFile, CacheStats } from './types.js';
 import { discoverFiles } from './discovery/fileDiscovery.js';
 import { rankPass1 } from './ranking/pass1Ranker.js';
-import { rankPass2 } from './ranking/pass2Ranker.js';
+import { rankPass2, densityScaleFor } from './ranking/pass2Ranker.js';
 import { buildGraph } from './ranking/graphBuilder.js';
 import { fitToBudget } from './budget/budgetFitter.js';
 import { computeBudget } from './budget/computeBudget.js';
 import { scanForSecrets } from './security/secretScanner.js';
+import { applyStableOrder, mergeOrder, loadOrder, saveOrder, hashContent } from './output/stableOrder.js';
 import { generateTree } from './output/treeGenerator.js';
 import { assemble, formatOutput } from './output/assembler.js';
 import { estimateFast } from './tokens/fastEstimator.js';
@@ -106,6 +107,9 @@ function assembleAndFormat(
     instructionText,
     budget: budget?.maxTokens ?? null,
     includeScores: config.output.includeScores,
+    // A timestamp in the header changes the first bytes of every pack, so it defeats prompt
+    // caching however stable the file ordering below it is.
+    omitVolatileMetadata: config.output.stableOrder,
   }, totalTokens, tree);
   return formatOutput(ctx, config.output.format);
 }
@@ -275,15 +279,24 @@ export async function runPipeline(
     try { instructionContent = fs.readFileSync(config.output.instructionFile, 'utf-8'); } catch { /* ignore */ }
   }
 
-  const { candidates, dropped, budget } = computeBudget(reranked, config, instructionContent);
+  // Stage 3: Pass 2 — density + centrality blend, applied to the full ranked set *before*
+  // the budget cut. Ranking after the cut made the final order budget-dependent: a larger
+  // budget widened the cut, and the newly admitted files — lifted by centrality — interleaved
+  // ahead of files the smaller budget had already selected, pushing them past the point where
+  // the budget ran out. Ranking first makes the cut a prefix of a fixed order, so a larger
+  // budget can only extend the candidate set, never reorder it.
+  // The density scale likewise comes from the whole set, so the blend is a property of the
+  // repo rather than of whichever subset happens to be in hand.
+  const pass2Ranked = rankPass2(
+    reranked, config.ranking.pinned, centralityMap, densityScaleFor(reranked),
+  );
+
+  const { candidates, dropped, budget } = computeBudget(pass2Ranked, config, instructionContent);
   allExcluded.push(...dropped);
 
   if (config.verbose && candidates.length > 2000) {
     process.stderr.write(`[repocode] note: ${candidates.length} candidate files — memory usage may be elevated\n`);
   }
-
-  // Stage 3: Pass 2 — density + centrality blend
-  const pass2Candidates = rankPass2(candidates, config.ranking.pinned, centralityMap);
 
   // Stage 4: Budget Fitting
   // llmCache is flushed once here rather than after each summary — saving
@@ -291,7 +304,7 @@ export async function runPipeline(
   // The flush runs even if fitting throws: LLM summaries cost real API spend and
   // must survive a mid-run provider failure.
   const { included, excluded: fitExcluded } = await fitToBudget(
-    pass2Candidates,
+    candidates,
     {
       pinned: config.ranking.pinned,
       compress: config.compress,
@@ -322,6 +335,28 @@ export async function runPipeline(
       score: 0,
       signalScores: { structural: 0, depth: 0, size: 0, extension: 0, keyword: 0, recency: 0 },
     });
+  }
+
+  // Stage 5.5: Prompt-cache-stable ordering.
+  // Ranking decides which files are packed; it should not decide where they appear. Rank is
+  // unstable by design — editing one file changes its score, and if it sat near the front every
+  // file behind it shifts. Measured on a 40-file repo, a single edit left consecutive packs
+  // sharing a 0% common prefix, so an agent re-packing between turns cached nothing.
+  if (config.output.stableOrder) {
+    const previousOrder = loadOrder(config.root);
+    // Hash the content actually emitted, not the file on disk: a file whose bytes changed but
+    // whose compressed form is identical does not break the prefix, and should not be moved.
+    const hashOf = (f: BudgetFile) => hashContent(f.content);
+    const ordered = applyStableOrder(included, previousOrder, hashOf);
+    included.length = 0;
+    included.push(...ordered);
+    // Persisted against every file still discovered, not just the packed ones, so a file that
+    // missed this budget keeps its slot instead of being re-appended when it returns.
+    saveOrder(config.root, mergeOrder(
+      previousOrder,
+      included.map(f => ({ path: f.path, hash: hashOf(f) })),
+      new Set(nonBinary.map(f => f.path)),
+    ));
   }
 
   // Stages 6+7: Tree + Output Assembly

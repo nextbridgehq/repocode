@@ -1,6 +1,6 @@
 {
   "name": "repocode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CLI to analyze, rank, and pack a repository into AI-ready context for LLMs and coding assistants",
   "keywords": [
     "ai",
@@ -38,7 +38,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "publishConfig": {
     "access": "public"
@@ -50,9 +50,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "clipboardy": "^4.0.0",
     "@repocode/core": "workspace:*",
     "@repocode/mcp": "workspace:*",
+    "clipboardy": "^4.0.0",
     "commander": "^12.0.0",
     "ink": "^5.0.0",
     "kleur": "^4.1.5",
@@ -64,6 +64,6 @@
     "@types/node": "^26.0.0",
     "@types/react": "^18.3.0",
     "ink-testing-library": "^4.0.0",
-    "vitest": "^1.6.0"
+    "vitest": "^4.1.10"
   }
 }

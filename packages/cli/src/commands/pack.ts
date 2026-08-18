@@ -6,6 +6,7 @@ import kleur from 'kleur';
 import ora from 'ora';
 import { buildPackConfig, type CLIOptions } from './buildConfig.js';
 import { resolveOutputPath } from '../output/resolveOutputPath.js';
+import { buildExplainReport } from '../output/explainReport.js';
 
 const FORMAT_EXTENSIONS: Record<OutputFormat, string> = {
   xml: '.xml', markdown: '.md', plain: '.txt', json: '.json',
@@ -39,6 +40,13 @@ export async function packCommand(
     const result = await runPipeline(config);
 
     spinner.stop();
+
+    if (opts.explain && config.output.format === 'json') {
+      // Machine-readable form, on stdout so it can be piped, captured in CI, or diffed between
+      // commits to surface a ranking change without re-running a benchmark.
+      process.stdout.write(JSON.stringify(buildExplainReport(result, config), null, 2) + '\n');
+      return;
+    }
 
     if (opts.explain) {
       const header = 'Rank  Score  Struct  Depth   Size    Kw    Recency  Path';

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { rankPass1, selectCandidates } from '../../src/ranking/pass1Ranker.js';
 import type { DiscoveredFile } from '../../src/types.js';
 import { ZERO_SIGNALS } from '../helpers.js';
@@ -27,6 +27,52 @@ describe('rankPass1', () => {
       expect(f.score).toBeGreaterThanOrEqual(0);
       expect(f.score).toBeLessThanOrEqual(1);
     });
+  });
+
+  it('orders score ties by path so input order cannot change the result', () => {
+    // Same directory, same size, same mtime, same extension → identical scores.
+    const mtime = new Date();
+    const tied = ['src/charlie.ts', 'src/alpha.ts', 'src/bravo.ts'].map(p => ({
+      ...makeFile(p), mtime,
+    }));
+
+    const ranked = rankPass1(tied, { keywords: [], pinned: [] });
+
+    expect(new Set(ranked.map(f => f.score)).size).toBe(1); // guard: really tied
+    expect(ranked.map(f => f.path)).toEqual([
+      'src/alpha.ts', 'src/bravo.ts', 'src/charlie.ts',
+    ]);
+  });
+
+  it('produces the same ranking when the input is shuffled', () => {
+    const mtime = new Date();
+    const paths = ['src/b.ts', 'src/a.ts', 'lib/c.ts', 'lib/a.ts', 'src/index.ts'];
+    const files = paths.map(p => ({ ...makeFile(p), mtime }));
+
+    const forward = rankPass1(files, { keywords: [], pinned: [] });
+    const reversed = rankPass1([...files].reverse(), { keywords: [], pinned: [] });
+
+    expect(reversed.map(f => f.path)).toEqual(forward.map(f => f.path));
+  });
+
+  it('is unaffected by the clock advancing between file evaluations', () => {
+    const mtime = new Date();
+    const files = ['src/b.ts', 'src/a.ts', 'lib/c.ts', 'lib/a.ts']
+      .map(p => ({ ...makeFile(p), mtime }));
+
+    // Recency reads the clock; if it reads it per file, whichever file is scored last
+    // looks fractionally older and the ranking depends on input order.
+    const clock = vi.spyOn(Date, 'now');
+    let t = mtime.getTime();
+    clock.mockImplementation(() => t++);
+
+    try {
+      const forward = rankPass1(files, { keywords: [], pinned: [] });
+      const reversed = rankPass1([...files].reverse(), { keywords: [], pinned: [] });
+      expect(reversed.map(f => f.path)).toEqual(forward.map(f => f.path));
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 
@@ -84,20 +130,40 @@ describe('selectCandidates — graduated multiplier', () => {
     expect(withNone.length).toBeLessThan(withPartial.length);
   });
 
-  it('compress:none uses 1.2x multiplier (candidateCount ≈ budget/medianTokens * 1.2)', () => {
-    // 20 files, each ~500 tokens, budget=5000 → effectiveBudget/medianTokens = 10
-    // none: floor(10 * 1.2) = 12 candidates
-    const files = makeFiles(20);
+  it('compress:none uses a 0.5x multiplier (candidateCount ≈ budget/medianTokens * 0.5)', () => {
+    // 50 files, each ~500 tokens, budget=5000 → effectiveBudget/medianTokens = 10
+    // none: floor(10 * 0.5) = 5 candidates
+    const files = makeFiles(50);
     const { candidates } = selectCandidates(files, 5000, [], 'none');
-    expect(candidates.length).toBeLessThanOrEqual(12);
-    expect(candidates.length).toBeGreaterThanOrEqual(10);
+    expect(candidates.length).toBe(5);
   });
 
-  it('compress:tier1-regex uses 2.0x multiplier', () => {
-    const files = makeFiles(20);
+  it('compress:tier1-regex uses a 0.6x multiplier', () => {
+    const files = makeFiles(50);
     const { candidates } = selectCandidates(files, 5000, [], 'tier1-regex');
-    // floor(10 * 2.0) = 20 — capped at 20 (total files)
-    expect(candidates.length).toBe(20);
+    // floor(10 * 0.6) = 6 candidates
+    expect(candidates.length).toBe(6);
+  });
+
+  it('always considers at least one candidate, even when the budget floors the count to zero', () => {
+    // Sub-1.0 multipliers mean a budget smaller than ~1.25 median files rounds to zero.
+    // Returning nothing would report a too-large file as never considered rather than as
+    // exceeding the budget, which is the reason a caller actually needs.
+    const files = makeFiles(5);   // ~500 tokens each
+    const { candidates } = selectCandidates(files, 100, [], 'partial');
+    expect(candidates.length).toBe(1);
+  });
+
+  it('considers fewer files than would fit whole, leaving the fitter upgrade headroom', () => {
+    // The property the numbers encode: a multiplier under 1.0. Considering more candidates
+    // than the budget can hold at full size is what drove every retrieval down to an ~11%
+    // signature — see results_phase1gate_precision.csv.
+    const files = makeFiles(200);
+    const budget = 5000; // ~10 median files fit whole
+    for (const level of ['none', 'tier1-regex', 'tier2-structural', 'partial'] as const) {
+      const { candidates } = selectCandidates(files, budget, [], level);
+      expect(candidates.length).toBeLessThan(10);
+    }
   });
 
   it('defaults to partial (3x) when compress param is omitted', () => {

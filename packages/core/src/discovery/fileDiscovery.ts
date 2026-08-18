@@ -94,5 +94,11 @@ export async function discoverFiles(
     });
   }
 
+  // globby walks directories concurrently, so its output order varies between runs on the
+  // same tree. Downstream ranking breaks score ties by input order, which would make the
+  // whole selection nondeterministic. Sort by code unit (not locale) so the order is also
+  // stable across machines.
+  results.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+
   return results;
 }
