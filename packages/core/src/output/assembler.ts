@@ -31,6 +31,7 @@ export interface AssembledContext {
   instructions: string;
   tree: string;
   includeScores: boolean;  // whether score/signals are populated on each file
+  omitVolatileMetadata: boolean;
   files: AssembledFile[];
 }
 
@@ -42,6 +43,11 @@ export interface AssembleOptions {
   instructionText?: string;  // pre-resolved instruction text from library
   budget: number | null;
   includeScores?: boolean;  // whether to populate score/signals on each assembled file
+  /** Drop metadata that changes whenever content does — the generation timestamp, the total
+   *  token count, and the file count in the preamble. All of them sit ahead of the file bodies,
+   *  so any of them changing breaks the byte prefix a prompt cache keys on, however stable the
+   *  ordering below is. Set alongside output.stableOrder. */
+  omitVolatileMetadata?: boolean;
 }
 
 function inferLanguage(files: BudgetFile[]): string {
@@ -72,10 +78,15 @@ export function assemble(
       ? ` to fit within a ${options.budget.toLocaleString()} token budget`
       : '';
     const fileWord = included.length === 1 ? 'file' : 'files';
-    preambleText =
-      `This file contains source code from the repository "${repoName}" (${language}). ` +
-      `It includes ${included.length} ${fileWord} selected by relevance${budgetInfo}. ` +
-      `Files are ordered by importance. The directory tree shows the structure of included files.`;
+    preambleText = options.omitVolatileMetadata
+      // The file count moves with any change to what fits, and the preamble is the very first
+      // thing in the output — so stating it here would break the cached prefix on every repack.
+      ? `This file contains source code from the repository "${repoName}" (${language}). `
+        + `Files are selected by relevance to fit a token budget. The directory structure below `
+        + `shows which files are included.`
+      : `This file contains source code from the repository "${repoName}" (${language}). `
+        + `It includes ${included.length} ${fileWord} selected by relevance${budgetInfo}. `
+        + `Files are ordered by importance. The directory tree shows the structure of included files.`;
   }
 
   let instructions = '';
@@ -95,7 +106,7 @@ export function assemble(
   return {
     preamble: preambleText,
     header: {
-      generated: new Date().toISOString(),
+      generated: options.omitVolatileMetadata ? '' : new Date().toISOString(),
       repository: repoName,
       tokens: totalTokens,
       budget: options.budget,
@@ -104,6 +115,7 @@ export function assemble(
     instructions,
     tree,
     includeScores: options.includeScores ?? false,
+    omitVolatileMetadata: options.omitVolatileMetadata ?? false,
     files: included.map((f, i) => ({
       path: f.path,
       language: f.language,

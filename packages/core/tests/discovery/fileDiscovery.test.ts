@@ -22,6 +22,19 @@ describe('discoverFiles', () => {
     expect(paths.some(p => p.includes('node_modules'))).toBe(false);
   });
 
+  it('returns files in a stable path-sorted order', async () => {
+    const opts = {
+      root: FIXTURE,
+      include: [],
+      exclude: [],
+      ignore: { useGitignore: true, useDefaultPatterns: true, customPatterns: [] },
+      maxFileSizeBytes: 1_000_000,
+    };
+    const paths = (await discoverFiles(opts)).map(f => f.path);
+
+    expect(paths).toEqual([...paths].sort());
+  });
+
   it('sets isBinary false for .ts files', async () => {
     const files = await discoverFiles({
       root: FIXTURE,
@@ -61,6 +74,31 @@ describe('discoverFiles', () => {
       maxFileSizeBytes: 1_000_000,
     });
     expect(files.map(f => f.path)).toEqual(['index.ts']);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('prunes node_modules nested under a subdirectory (monorepo shape), not just at root', async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const p = await import('path');
+    const tmpDir = fs.mkdtempSync(p.join(os.tmpdir(), 'cc-nested-nodemod-'));
+    fs.mkdirSync(p.join(tmpDir, 'packages', 'core', 'src'), { recursive: true });
+    fs.writeFileSync(p.join(tmpDir, 'packages', 'core', 'src', 'index.ts'), 'export const a = 1;\n');
+    fs.mkdirSync(p.join(tmpDir, 'packages', 'core', 'node_modules', 'some-dep'), { recursive: true });
+    fs.writeFileSync(
+      p.join(tmpDir, 'packages', 'core', 'node_modules', 'some-dep', 'index.js'),
+      'module.exports = {};\n',
+    );
+    const t0 = Date.now();
+    const files = await discoverFiles({
+      root: tmpDir,
+      include: [],
+      exclude: [],
+      ignore: { useGitignore: false, useDefaultPatterns: true, customPatterns: [] },
+      maxFileSizeBytes: 1_000_000,
+    });
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(files.map(f => f.path)).toEqual(['packages/core/src/index.ts']);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

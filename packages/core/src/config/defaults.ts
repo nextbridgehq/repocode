@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG: RepoCodeConfig = {
     instructionFile: null,
     headerText: '',
     includeScores: false,
+    stableOrder: false,
   },
   budget: {
     maxTokens: 100_000,
@@ -29,7 +30,7 @@ export const DEFAULT_CONFIG: RepoCodeConfig = {
     customPatterns: [],
   },
   ranking: {
-    keywords: ['auth', 'core', 'api', 'db', 'service', 'middleware', 'model', 'route', 'handler'],
+    keywords: [],
     pinned: [],
   },
   security: {

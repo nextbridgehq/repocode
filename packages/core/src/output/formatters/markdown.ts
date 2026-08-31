@@ -10,7 +10,12 @@ export function formatMarkdown(ctx: AssembledContext): string {
   const parts: string[] = [];
 
   parts.push(`# RepoCode Output`);
-  parts.push(`> ${ctx.header.tokens.toLocaleString()} tokens${ctx.header.budget ? ` / ${ctx.header.budget.toLocaleString()}` : ''} | ${ctx.header.fileCount} files | ${ctx.header.generated}`);
+  // Token total, file count and timestamp all move whenever content does, and this line sits
+  // above every file body — so in cache-stable mode the summary is dropped rather than
+  // guaranteeing a miss on every repack.
+  if (!ctx.omitVolatileMetadata) {
+    parts.push(`> ${ctx.header.tokens.toLocaleString()} tokens${ctx.header.budget ? ` / ${ctx.header.budget.toLocaleString()}` : ''} | ${ctx.header.fileCount} files${ctx.header.generated ? ` | ${ctx.header.generated}` : ''}`);
+  }
   parts.push('');
 
   if (ctx.preamble) {

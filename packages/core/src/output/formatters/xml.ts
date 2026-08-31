@@ -20,9 +20,9 @@ export function formatXml(ctx: AssembledContext): string {
   }
 
   parts.push('  <metadata>');
-  parts.push(`    <generated>${ctx.header.generated}</generated>`);
+  if (ctx.header.generated) parts.push(`    <generated>${ctx.header.generated}</generated>`);
   parts.push(`    <repository>${ctx.header.repository}</repository>`);
-  parts.push(`    <tokens>${ctx.header.tokens}</tokens>`);
+  if (!ctx.omitVolatileMetadata) parts.push(`    <tokens>${ctx.header.tokens}</tokens>`);
   if (ctx.header.budget) parts.push(`    <budget>${ctx.header.budget}</budget>`);
   parts.push('  </metadata>');
 

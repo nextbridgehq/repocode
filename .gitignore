@@ -6,6 +6,23 @@ docs/
 # generated pack output
 repocode-output.*
 
+# benchmark harness and results: kept local only. The methodology and the numbers it
+# produces are not published; results are regenerated per run and are only meaningful
+# alongside the commit that produced them.
+packages/.cache/
+packages/stats/
+packages/bench/
+scripts/benchmark-chart.js
+
+# stable-order state: per-checkout cache of the previous output ordering, rebuilt on demand
+.repocode/
+
+# viscraft audit/probe artifacts: local analysis, not published
+.viscraft/
+
+# Electron/crashpad noise written into the cwd by the editor, not by this project
+debug.log
+
 # test coverage
 coverage/
 

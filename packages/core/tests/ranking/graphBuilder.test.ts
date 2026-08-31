@@ -135,4 +135,18 @@ describe('buildGraph', () => {
     expect(imports['a.ts']).toContain('foo.ts');
     expect(imports['a.ts'].every((imp: string) => !imp.includes('express'))).toBe(true);
   });
+
+  it('does not scan node_modules nested under a subdirectory (monorepo shape) when default patterns are on', async () => {
+    write('packages/core/src/a.ts', `export const a = 1;`);
+    write('packages/core/node_modules/some-dep/index.ts', `export const dep = 1;`);
+    const { buildGraph } = await import('../../src/ranking/graphBuilder.js');
+    const t0 = Date.now();
+    const { imports } = await buildGraph(tmpDir, {
+      useGitignore: false,
+      useDefaultPatterns: true,
+      customPatterns: [],
+    });
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(Object.keys(imports)).toEqual(['packages/core/src/a.ts']);
+  });
 });

@@ -1,9 +1,10 @@
-import { loadConfig } from '@repocode/core';
+import { loadConfig, loadRepomixConfig, budgetForModel, knownModelNames, MODEL_TABLE_VERIFIED_ON } from '@repocode/core';
 import type { RepoCodeConfig, OutputFormat, SecurityMode, GitMode, GitConfig, LLMProviderName } from '@repocode/core';
 import path from 'path';
 
 export interface CLIOptions {
   budget?: string;
+  model?: string;
   format?: OutputFormat;
   output?: string;
   stdout?: boolean;
@@ -30,6 +31,9 @@ export interface CLIOptions {
   base?: string;
   deps?: boolean;
   graphDepth?: string;
+  maxCandidates?: string;
+  stableOrder?: boolean;
+  fromRepomix?: boolean;
   preset?: string;
   listPresets?: boolean;
   savePreset?: string;
@@ -54,11 +58,28 @@ export async function buildPackConfig(
 
   // Commander maps --no-budget to opts.budget === false (boolean)
   const noBudget = opts.budget === (false as unknown as string);
+  const explicitBudget = !noBudget && opts.budget
+    ? parseInt((opts.budget as string).replace(/k$/i, '000').replace(/m$/i, '000000'), 10)
+    : undefined;
+
+  // --model is a convenience for picking a budget, so an explicit --budget outranks it rather
+  // than conflicting with it. Saying both is how you pack for a model but override the size.
+  let modelBudget: number | undefined;
+  if (opts.model !== undefined && !noBudget) {
+    const derived = budgetForModel(opts.model);
+    if (derived === null) {
+      process.stderr.write(
+        `[repocode] error: unknown model "${opts.model}". Known: ${knownModelNames().join(', ')}\n` +
+        `[repocode] context windows verified ${MODEL_TABLE_VERIFIED_ON}; use --budget <tokens> for anything not listed.\n`,
+      );
+      process.exit(1);
+    }
+    if (explicitBudget === undefined) modelBudget = derived;
+  }
+
   const maxTokens = noBudget
     ? null
-    : opts.budget
-      ? parseInt((opts.budget as string).replace(/k$/i, '000').replace(/m$/i, '000000'), 10)
-      : undefined; // let config/default handle it
+    : explicitBudget ?? modelBudget; // undefined lets config/default handle it
 
   const maxFileSizeBytes = opts.maxFileSize
     ? parseInt(opts.maxFileSize.replace(/k$/i, '000').replace(/m$/i, '000000'), 10)
@@ -115,6 +136,7 @@ export async function buildPackConfig(
       instructionFile: opts.instructionFile ?? null,
       headerText: opts.header ?? '',
       includeScores: opts.explain,
+      ...(opts.stableOrder ? { stableOrder: true } : {}),
     },
     budget: maxTokens !== undefined ? { maxTokens } : undefined,
     ...(opts.include !== undefined ? { include: opts.include } : {}),
@@ -137,6 +159,7 @@ export async function buildPackConfig(
     ranking: opts.pin ? { pinned: opts.pin } : undefined,
     ...(maxFileSizeBytes !== undefined ? { maxFileSizeBytes } : {}),
     ...(opts.graphDepth !== undefined ? { graphDepth: parseInt(opts.graphDepth, 10) } : {}),
+    ...(opts.maxCandidates !== undefined ? { maxCandidates: parseInt(opts.maxCandidates, 10) } : {}),
     git: gitConfig,
     stdinFiles: opts.stdinFiles,
   } as Partial<RepoCodeConfig>;
@@ -168,7 +191,48 @@ export async function buildPackConfig(
     };
   }
 
-  return loadConfig(root, { ...overrides, root }, { preset: opts.preset, allowJsConfig: true });
+  // Repomix config sits below explicit CLI flags and above defaults, the same slot a project
+  // config occupies — so `--from-repomix -f markdown` still honours the flag the user typed.
+  let effective = overrides;
+  if (opts.fromRepomix) {
+    const translated = loadRepomixConfig(root);
+    if (!translated) {
+      process.stderr.write('[repocode] warning: --from-repomix given but no repomix.config.json found in ' + root + '\n');
+    } else {
+      effective = mergeUnder(translated.config, overrides);
+      for (const note of translated.notes) {
+        process.stderr.write(`[repocode] from-repomix: ${note}\n`);
+      }
+    }
+  }
+
+  return loadConfig(root, { ...effective, root }, { preset: opts.preset, allowJsConfig: true });
+}
+
+/** Merge `over` on top of `base`, one level into plain objects. Keys whose value is undefined
+ *  do not overwrite — Commander leaves most options undefined, and treating those as an
+ *  explicit "unset" would silently erase whatever the Repomix config had said. */
+function mergeUnder(
+  base: Partial<RepoCodeConfig>,
+  over: Partial<RepoCodeConfig>,
+): Partial<RepoCodeConfig> {
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(over as Record<string, unknown>)) {
+    if (value === undefined) continue;
+    const existing = out[key];
+    if (isPlainObject(existing) && isPlainObject(value)) {
+      const merged: Record<string, unknown> = { ...existing };
+      for (const [k, v] of Object.entries(value)) if (v !== undefined) merged[k] = v;
+      out[key] = merged;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out as Partial<RepoCodeConfig>;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 export function buildPresetData(opts: CLIOptions): Partial<RepoCodeConfig> {

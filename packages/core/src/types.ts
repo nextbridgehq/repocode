@@ -35,6 +35,10 @@ export interface QueryConfig {
   boostImports: number;
   boostComments: number;
   maxEmbedFiles: number;
+  /** Share of the final score the query accounts for, with the pass-1 prior taking the
+   *  remainder. Defaults to 0.7. Raise it to trust the query more on repos where generic
+   *  structural signals are noise; lower it when the query is vague. */
+  queryWeight?: number;
 }
 
 export interface InstructionDef {
@@ -228,6 +232,11 @@ export interface RepoCodeConfig {
     instructionFile: string | null;
     headerText: string;
     includeScores: boolean;  // include per-file score/signals in JSON output
+    /** Emit files in the order they were emitted last run, appending new ones at the tail,
+     *  so an unchanged prefix stays byte-identical and prompt caches hit. Ordering only —
+     *  ranking still decides which files are included. Off by default: it trades
+     *  most-relevant-first ordering for cache reuse. */
+    stableOrder: boolean;
   };
   budget: {
     maxTokens: number | null;  // null = --no-budget

@@ -17,9 +17,13 @@ export function depthScore(filePath: string): number {
   return Math.exp(-depth * 0.3);
 }
 
+/** Scaled by log rather than by bytes. File sizes in a repo span orders of magnitude and the
+ *  maximum is usually a vendored blob or data table, so a linear scale puts every ordinary
+ *  source file within a few thousandths of 1.0 — the signal keeps its weight but stops
+ *  discriminating. Endpoints are unchanged: an empty file scores 1.0 and the largest 0.0. */
 export function sizeScore(fileSize: number, maxFileSize: number): number {
   if (maxFileSize === 0) return 1.0;
-  return 1 - fileSize / maxFileSize;
+  return 1 - Math.log1p(fileSize) / Math.log1p(maxFileSize);
 }
 
 const EXT_TIER1 = new Set(['.ts', '.py', '.go', '.rs', '.java', '.kt', '.swift', '.cpp', '.c']);
@@ -43,8 +47,11 @@ export function keywordScore(filePath: string, keywords: string[]): number {
   return Math.min(1.0, matched * 0.5);
 }
 
-export function recencyScore(mtime: Date): number {
-  const ageMs = Date.now() - mtime.getTime();
+/** `now` is a parameter so a whole ranking pass can share one reading. Reading the clock
+ *  per file makes later-scored files look fractionally older, which leaks input order
+ *  into the ranking. */
+export function recencyScore(mtime: Date, now: number = Date.now()): number {
+  const ageMs = now - mtime.getTime();
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   return Math.exp(-ageDays / 7);
 }

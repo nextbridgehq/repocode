@@ -106,4 +106,19 @@ describe('rankPass2', () => {
     expect(result[0].path).toBe('pinned.ts');
     expect(result[0].score).toBe(0.1); // pinned score unchanged
   });
+
+  it('keeps the relative order of files when the set grows, given a shared density scale', () => {
+    // a: low density, high centrality. b: 10x a's density, no centrality.
+    // c: extreme density — present only in the larger set, and the set-local maximum.
+    const a = makeRanked('a.ts', 4000, 0.5);
+    const b = makeRanked('b.ts', 400, 0.5);
+    const c = makeRanked('c.ts', 4, 0.5);
+    const centralityMap = new Map([['/root/a.ts', 1.0]]);
+    const densityScale = 0.5; // c's raw density — fixed, computed over the whole repo
+
+    const small = rankPass2([a, b], [], centralityMap, densityScale).map(f => f.path);
+    const large = rankPass2([a, b, c], [], centralityMap, densityScale).map(f => f.path);
+
+    expect(large.filter(p => p !== 'c.ts')).toEqual(small);
+  });
 });

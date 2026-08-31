@@ -28,6 +28,19 @@ export function computeBudget(
   // maxTokens is non-null on this path — the no-budget case never gets here.
   const maxTokens = config.budget.maxTokens as number;
 
+  // Reserves are subtracted before anything is selected, so a budget at or below them yields
+  // an empty pack. That is arithmetically correct and completely opaque from the outside: the
+  // summary reports "0 included, N excluded" and gives no reason. Say so instead.
+  if (maxTokens <= reserved) {
+    process.stderr.write(
+      `[repocode] warning: budget of ${maxTokens.toLocaleString()} tokens is at or below the `
+      + `reserved ${reserved.toLocaleString()} `
+      + `(${config.budget.reserveForResponse.toLocaleString()} for the response, `
+      + `${config.budget.reserveForPrompt.toLocaleString()} for the prompt), `
+      + `leaving nothing for file content. Raise --budget or lower the reserves.\n`
+    );
+  }
+
   // Pass 1: preliminary budget ignoring overhead, to get a candidate count.
   // Clamped at 0 so a reserve larger than the budget cannot go negative.
   const preliminaryBudget = Math.max(0, maxTokens - reserved);

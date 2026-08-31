@@ -1,0 +1,22 @@
+# RepoCode
+
+> RepoCode is a CLI that packs a repository into task-scoped, token-budgeted context for coding agents and LLMs — give it a task and a budget, and it finds the files that matter.
+
+Discovers files, ranks them by structural importance, import centrality, recency, and relevance to a query, then fits the highest-ranked ones into a token budget — compressing lower-ranked files first rather than truncating. Scopes to `--query`, `--diff`, `--branch`, or `--pr` instead of packing a whole repository. Ships as a CLI, an MCP server, and an embeddable core library. No telemetry; nothing leaves the machine unless a network-touching flag (`--llm-provider`, `--query-mode semantic`, `--remote`) is explicitly set.
+
+## Docs
+
+- [README](https://github.com/nextbridgehq/repocode/blob/main/README.md): quickstart, CLI reference, configuration, MCP setup, FAQ
+- [CHANGELOG](https://github.com/nextbridgehq/repocode/blob/main/CHANGELOG.md): release history
+- [Architecture](https://github.com/nextbridgehq/repocode/blob/main/docs/architecture.md): pipeline design
+
+## Packages
+
+- [repocode](https://www.npmjs.com/package/repocode): CLI — the primary user-facing entry point
+- [@repocode/core](https://www.npmjs.com/package/@repocode/core): core pipeline library — embed it in your own tools
+- [@repocode/mcp](https://www.npmjs.com/package/@repocode/mcp): MCP server — exposes context tools to AI assistants
+
+## Optional
+
+- [Contributing](https://github.com/nextbridgehq/repocode/blob/main/CONTRIBUTING.md): build from source, run tests
+- [License](https://github.com/nextbridgehq/repocode/blob/main/LICENSE): MIT

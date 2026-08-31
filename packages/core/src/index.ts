@@ -3,6 +3,10 @@ export { runPipeline, runPipelineForTUI, packFromSelection } from './pipeline.js
 export { loadConfig, savePreset, listUserPresets } from './config/loader.js';
 export type { LoadConfigOptions } from './config/loader.js';
 export { DEFAULT_CONFIG } from './config/defaults.js';
+export { translateRepomixConfig, loadRepomixConfig, loadRepomixIgnore } from './config/fromRepomix.js';
+export type { RepomixConfig, TranslationResult } from './config/fromRepomix.js';
+export { budgetForModel, knownModels, knownModelNames, MODEL_BUDGETS, MODEL_TABLE_VERIFIED_ON } from './config/modelBudgets.js';
+export type { ModelSpec } from './config/modelBudgets.js';
 export type {
   RepoCodeConfig, PackResult, DiscoveredFile, BudgetFile,
   ExcludedFile, OutputFormat, SecurityMode, CompressionLevel,

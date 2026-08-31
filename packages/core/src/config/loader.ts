@@ -7,7 +7,7 @@ import { BUILTIN_PRESETS } from './builtinPresets.js';
 const VALID_CONFIG_KEYS = new Set([
   'root', 'maxFileSizeBytes', 'output', 'budget', 'include', 'exclude',
   'ignore', 'ranking', 'security', 'compress', 'verbose', 'dryRun',
-  'git', 'graphDepth', 'presets',
+  'git', 'graphDepth', 'maxCandidates', 'presets',
   'llm', 'query', 'queryConfig', 'instruction', 'instructions',
 ]);
 

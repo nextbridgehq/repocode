@@ -1,9 +1,14 @@
-import { globby } from 'globby';
 import { isBinary } from 'istextorbinary';
 import fs from 'fs';
 import path from 'path';
 import type { DiscoveredFile, IgnoreConfig } from '../types.js';
-import { buildIgnoreFilter, DEFAULT_PATTERNS } from './ignoreRules.js';
+import {
+  buildIgnoreFilter,
+  computeDefaultIncludeRoots,
+  findAlwaysPrunedDirs,
+  globbyMulti,
+  DEFAULT_PATTERNS,
+} from './ignoreRules.js';
 
 export const LANGUAGE_MAP: Record<string, string> = {
   ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
@@ -26,7 +31,15 @@ export async function discoverFiles(
 ): Promise<DiscoveredFile[]> {
   const { root, include, exclude, ignore, maxFileSizeBytes } = options;
 
-  const includePatterns = include.length > 0 ? include : ['**/*'];
+  // When the caller doesn't specify --include, computeDefaultIncludeRoots stands in for the
+  // naive `**/*` with an explicit list of scoped patterns that never touch a default-excluded
+  // directory (node_modules, dist, etc.) at any depth — see its docstring for why a plain
+  // `**/*` plus `ignore` patterns crawls this repo's own tree for 10+ seconds instead of
+  // milliseconds. A caller-supplied --include is trusted as-is, matching prior behaviour.
+  const includePatterns = include.length > 0
+    ? include
+    : (ignore.useDefaultPatterns ? computeDefaultIncludeRoots(root) : ['**/*']);
+
   const filter = await buildIgnoreFilter(root, ignore);
   // Deliberately narrower than the full ignore set buildIgnoreFilter computes: .gitignore,
   // .repocodeignore, and custom patterns can contain gitignore negation (`!keep.me`), which
@@ -35,12 +48,22 @@ export async function discoverFiles(
   // to recover it. DEFAULT_PATTERNS (hardcoded, negation-free) and `exclude` (plain user globs,
   // not gitignore syntax) are safe to prune at the walk level; everything else is enforced only
   // by `filter` below, which correctly handles negation via the real `ignore` package.
+  // DEFAULT_PATTERNS alone only prunes traversal for a node_modules/.git/dist/etc that sits
+  // directly under root — see findAlwaysPrunedDirs for why an unanchored pattern doesn't
+  // reliably prune nested occurrences (e.g. per-package node_modules in a workspace monorepo).
+  // Locate every nested occurrence and add an exact anchored pattern for each so a
+  // caller-supplied --include walk never descends into one, regardless of depth.
+  const nestedPrunePatterns = ignore.useDefaultPatterns
+    ? findAlwaysPrunedDirs(root).map(rel => `${rel}/**`)
+    : [];
+
   const globbyIgnorePatterns = [
     ...(ignore.useDefaultPatterns ? DEFAULT_PATTERNS : []),
+    ...nestedPrunePatterns,
     ...exclude,
   ];
 
-  const rawPaths = await globby(includePatterns, {
+  const rawPaths = await globbyMulti(includePatterns, {
     cwd: root,
     ignore: globbyIgnorePatterns,
     dot: false,
@@ -93,6 +116,12 @@ export async function discoverFiles(
       source: 'normal',
     });
   }
+
+  // globby walks directories concurrently, so its output order varies between runs on the
+  // same tree. Downstream ranking breaks score ties by input order, which would make the
+  // whole selection nondeterministic. Sort by code unit (not locale) so the order is also
+  // stable across machines.
+  results.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   return results;
 }

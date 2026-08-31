@@ -72,3 +72,39 @@ describe('computeBudget', () => {
     expect(candidates.length + dropped.length).toBe(files.length);
   });
 });
+
+describe('computeBudget — reserves larger than the budget', () => {
+  it('warns when the reserves consume the entire budget', () => {
+    // Reserves default to 6000 tokens. Asking for a 5000-token budget leaves nothing, so the
+    // pack comes back empty — verified against the published 0.1.0 and the current build, both
+    // of which reported "0 included, 2 excluded" with no reason given. The empty result is
+    // correct; saying nothing about why is not.
+    const warnings: string[] = [];
+    const original = process.stderr.write;
+    process.stderr.write = ((chunk: string) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      computeBudget(makeFiles(5), makeConfig({
+        budget: { maxTokens: 5000, reserveForResponse: 4000, reserveForPrompt: 2000 },
+      }), '');
+    } finally {
+      process.stderr.write = original;
+    }
+    const joined = warnings.join('');
+    expect(joined).toMatch(/reserve/i);
+    expect(joined).toMatch(/5,?000/);
+  });
+
+  it('says nothing when the budget comfortably exceeds the reserves', () => {
+    const warnings: string[] = [];
+    const original = process.stderr.write;
+    process.stderr.write = ((chunk: string) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      computeBudget(makeFiles(5), makeConfig({
+        budget: { maxTokens: 50_000, reserveForResponse: 4000, reserveForPrompt: 2000 },
+      }), '');
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(warnings.join('')).not.toMatch(/reserve/i);
+  });
+});

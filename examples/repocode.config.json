@@ -1,0 +1,17 @@
+{
+  "output": {
+    "format": "markdown",
+    "stableOrder": true
+  },
+  "budget": {
+    "maxTokens": 80000
+  },
+  "exclude": ["**/*.generated.ts", "**/fixtures/**"],
+  "ranking": {
+    "keywords": ["auth", "session", "token"],
+    "pinned": ["src/config/index.ts"]
+  },
+  "security": {
+    "mode": "redact"
+  }
+}

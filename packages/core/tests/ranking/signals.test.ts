@@ -34,6 +34,20 @@ describe('sizeScore', () => {
   it('returns 1.0 for smallest file', () => expect(sizeScore(0, 1000)).toBe(1.0));
   it('returns 0.0 for largest file', () => expect(sizeScore(1000, 1000)).toBe(0.0));
   it('returns 1.0 when maxFileSize is 0', () => expect(sizeScore(0, 0)).toBe(1.0));
+
+  it('separates ordinary source files when one outlier sets the maximum', () => {
+    // A repo whose largest file is a 500 KB vendored blob. Ordinary source files are all
+    // under 10% of that, so a scale linear in bytes collapses them onto the same score and
+    // the signal stops discriminating between them.
+    const max = 500_000;
+    const small = sizeScore(1_000, max);
+    const medium = sizeScore(10_000, max);
+    const large = sizeScore(50_000, max);
+
+    expect(small).toBeGreaterThan(medium);
+    expect(medium).toBeGreaterThan(large);
+    expect(small - large).toBeGreaterThan(0.2);
+  });
 });
 
 describe('extensionScore', () => {

@@ -1,36 +1,8 @@
 # RepoCode
 
-Pack almost any repository into a token-budgeted context file for AI coding assistants.
+RepoCode is a CLI that packs a repository into task-scoped, token-budgeted context for coding agents and LLMs — give it a task and a budget, and it finds the files that matter.
 
-```bash
-npx repocode . --budget 100k
-```
-
-RepoCode discovers and ranks your files, follows import relationships, and produces XML, Markdown, JSON, or plain text. 
-
-* Produces portable context for ChatGPT, Claude, Gemini, and other AI coding assistants.
-* Includes Git diff and PR modes
-* Supports watch mode and MCP
-* Explains what was included, compressed, or excluded
-
-*Illustrative output:*
-```console
-$ npx repocode . --budget 50k
-✓ Discovered 1,284 files
-✓ Ranked 312 candidate files
-✓ Included 87 files
-✓ Compressed 34 files
-✓ Output: repocode-output.xml
-✓ Final context: 49,842 tokens
-```
-
-```xml
-<repository>
-  <file path="src/index.ts">...</file>
-  <!-- 86 more files -->
-</repository>
-```
-[![CI](https://img.shields.io/github/actions/workflow/status/nextbridgehq/repocode/ci.yml?branch=master&label=CI)](https://github.com/nextbridgehq/repocode/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/nextbridgehq/repocode/ci.yml?branch=main&label=CI)](https://github.com/nextbridgehq/repocode/actions)
 [![npm version](https://img.shields.io/npm/v/repocode?label=npm)](https://www.npmjs.com/package/repocode)
 [![Node.js](https://img.shields.io/node/v/repocode?logo=node.js&logoColor=white)](https://www.npmjs.com/package/repocode)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -39,17 +11,77 @@ $ npx repocode . --budget 50k
 
 ---
 
-## Why RepoCode?
+## How ranking is evaluated
 
-AI assistants are only as effective as the context they receive. Many production repositories exceed a practical AI context budget, forcing developers to concatenate files manually or rely on simple glob-based selection that does not account for import relationships or structural importance. 
+Ranking is evaluated internally against SWE-bench Lite: given a bug report and a token budget, does the packed output contain the file the accepted fix actually edits, compared against oracle and random-selection controls. Results vary considerably by repository. The harness and raw numbers aren't published here — a specific figure stops being honest the moment the methodology or the code producing it moves on without it, so treat any accuracy claim, ours included, with the skepticism that deserves until you've run it against your own repository.
 
-RepoCode solves this through **intelligent context assembly**:
-* **Smart Ranking:** Files are scored by structural importance, import centrality, and recency—not just alphabetical order.
-* **Token-aware:** Fits the highest-ranked files into your configured token budget by compressing or trimming lower-priority files, while making inclusion decisions visible.
-* **Local by default:** The pipeline runs locally, with built-in secret scanning.
-* **Flexible:** Use it as a CLI for one-off prompts, an MCP server for continuous context, or embed the core library in your own tools.
+## Quickstart
 
-## Four Common Workflows
+```bash
+npx repocode . --budget 100k
+```
+
+No install, no config file. RepoCode discovers your files, ranks them, and fits the highest-ranked ones into the budget, writing `repocode-output.xml` (`--stdout` to pipe it instead).
+
+Scope it to the task you're actually doing:
+
+```bash
+npx repocode . --query "authentication and session handling" --budget 60k   # by topic
+npx repocode . --diff --budget 60k                                          # by uncommitted changes
+npx repocode . --pr --budget 80k                                            # by PR diff
+```
+
+Real output, from running RepoCode on its own repository:
+
+```
+$ npx repocode . --budget 50k
+
+  Files:      71 included, 182 excluded
+  Tokens:     28,197 / 50,000 (56%)
+  Format:     XML → repocode-output.xml
+
+<repocode>
+  <preamble>This file contains source code from the repository "repocode" (typescript). It includes 71 files selected by relevance to fit within a 50,000 token budget. Files are ordered by importance. The directory tree shows the structure of included files.</preamble>
+  <metadata>...</metadata>
+  <directory_structure>...</directory_structure>
+  <file path="packages/core/src/types.ts">...</file>
+  <!-- 70 more files -->
+</repocode>
+```
+
+## What makes it different
+
+* **Graph traversal, not glob matching.** RepoCode follows import relationships out from the files a query surfaces, so a ranked-high file pulls in the modules it actually depends on — not just whatever else happens to match a pattern.
+* **Ranking-to-fit, not truncation.** Every candidate file is scored — structural importance, import centrality, recency, relevance to your query — and lower-ranked files are compressed first to fit the budget, rather than being dropped or cut off mid-file.
+* **Cache-stable output.** With `--stable-order`, two packs of an unchanged repository are byte-identical, and a changed file moves to the end instead of shifting everything after it. Measured on a 40-file repo, editing one file went from a 0% to a 100% reusable prompt-cache prefix.
+
+---
+
+## Alternatives
+
+<details>
+<summary><b>RepoCode vs Repomix</b></summary>
+
+[Repomix](https://github.com/yamadashy/repomix) is the tool most people will be choosing between. It is more mature than this one, and there are things it does better.
+
+| | RepoCode | Repomix |
+|---|---|---|
+| Task-scoped ranking (`--query`, `--diff`, `--pr`) | **yes** | no |
+| Cache-stable output across repacks | **yes** (`--stable-order`) | no |
+| Compression tiers | **4**, chosen per file to fit the budget | one `--compress` mode |
+| Machine-readable ranking report | **yes** (`--explain --format json`) | no |
+| Maturity, users, real-world mileage | new | **years of it** |
+| Ecosystem surfaces | CLI, MCP, library | **CLI, MCP, VS Code extension, website, browser extension** |
+| Language parsing breadth | 11 languages, hand-written resolvers | **Tree-sitter, far wider coverage** |
+
+The honest summary: RepoCode's edge is task-scoped ranking and cache-stable output — Repomix doesn't do either today. We don't publish head-to-head retrieval numbers, so weigh that claim (or any tool's accuracy claim, including a competitor's) against your own repository rather than a chart. Repomix is the safer choice on every axis that isn't ranking: it is more mature, better supported, reaches more places, and parses more languages.
+
+If you are already using Repomix and it is working, there is no urgent reason to switch.
+
+</details>
+
+<details>
+<summary><b>Four Common Workflows</b></summary>
 
 **1. Code Review**
 Gather just the files modified in a PR, plus their immediate dependencies:
@@ -75,7 +107,10 @@ Inspect how candidate files were ranked and which files would be selected:
 npx repocode . --explain
 ```
 
-## Packages
+</details>
+
+<details>
+<summary><b>Packages</b></summary>
 
 | Package | npm | Description |
 |---|---|---|
@@ -83,9 +118,14 @@ npx repocode . --explain
 | [`@repocode/core`](packages/core) | `npm install @repocode/core` | Core pipeline library — embed it in your own tools |
 | [`@repocode/mcp`](packages/mcp) | `npx -p @repocode/mcp repocode-mcp` | MCP server — exposes context tools to AI assistants |
 
-## Installation
+</details>
 
-Requires Node.js ≥ 22.
+<details>
+<summary><b>Installation</b></summary>
+
+### Requirements
+
+Requires Node.js ≥ 20.
 
 ```bash
 # CLI, as a one-off
@@ -95,20 +135,20 @@ npx repocode .
 npm install -g repocode
 ```
 
----
+</details>
 
-## Core Concepts
+<details>
+<summary><b>Core Concepts</b></summary>
 
 *(Note: The following examples assume RepoCode is installed globally; prefix commands with `npx` for one-off use.)*
 
 ### Token Budgeting & Compression
-RepoCode ensures your output fits a specific token limit. When over budget, it compresses files based on their rank:
+RepoCode ensures your output fits a specific token limit. When over budget, it compresses files based on their rank, entirely on your machine — the default ceiling (`partial`) never leaves local:
 - **`tier1`**: Strips comments and whitespace.
 - **`tier2`**: Strips function bodies, keeping only structural signatures.
-- **`tier3-llm`**: Generates an LLM semantic summary (preserves exports/imports/types, with one-line descriptions).
 - **`partial`**: Trims from the bottom of a file when strictly over budget.
 
-*Note: `tier3-llm` sends selected file contents to the configured LLM provider. Before using it with sensitive repositories, select an appropriate security mode such as `redact`, `exclude`, or `fail`.*
+One tier is opt-in and not local: **`tier3-llm`** sends selected file contents to your configured LLM provider for a semantic summary (exports/imports/types, with one-line descriptions). It only runs once you've set `--llm-provider` — with none configured, nothing goes over the network no matter what compression ceiling is in effect. Before using it with sensitive repositories, pair it with an appropriate security mode such as `redact`, `exclude`, or `fail`; see [Security and Privacy](#security-and-privacy).
 
 ### Git and Query Modes
 Pack only the files that matter:
@@ -129,24 +169,34 @@ repocode --query "database migrations" --budget 50k
 ### Language Support
 Import tracing (for intelligent ranking) currently supports: TypeScript, JavaScript, Python, Go, Rust, Ruby, Java, C, C++, PHP, and C#. All other text files are discovered and ranked by baseline heuristics.
 
----
+</details>
 
-## Configuration
+<details>
+<summary><b>Configuration</b></summary>
 
 RepoCode reads from `repocode.config.json` in your repository root, allowing you to define defaults, custom instructions, and compression tiers.
 
 Order of precedence: `CLI flags > project config > presets > defaults`.
 
-## Security and Privacy
+</details>
 
-* **Secret Scanning:** RepoCode scans for secrets by default. In MCP mode, it automatically redacts detected secrets before returning output. 
+<a id="security-and-privacy"></a>
+<details>
+<summary><b>Security and Privacy</b></summary>
+
+**No telemetry.** RepoCode collects nothing, phones home nowhere, and has no analytics of any kind. Nothing about your code, your usage, or your machine leaves it unless you explicitly ask for a feature that sends data — and there are exactly three, each named below.
+
+* **Secret Scanning:** RepoCode scans for secrets by default. In MCP mode, it automatically redacts detected secrets before returning output.
 * **Safe Execution:** The CLI and MCP server block arbitrary execution of repository configuration files (e.g., `.js` configs).
-* **Data Privacy:** The packing and ranking pipeline runs locally by default. Features that use an external model provider, including `tier3-llm` and `semantic` query mode, may transmit selected repository data to that provider.
-  
-  Content returned through MCP or manually provided to a hosted AI assistant is subject to that client's data-handling policy. The `--remote` option retrieves repository data directly from GitHub.
+* **What can leave your machine, and only if you ask for it:**
+  * `--llm-provider <name>` — once set, a file too large to fit locally can be sent to that provider for a `tier3-llm` summary. The default compression ceiling already permits tier3-llm; what gates the network call is having a provider configured at all, not the ceiling — so `--llm-provider` is the flag to reach for if you want a guarantee nothing leaves the machine, not `--compress`.
+  * `--query-mode semantic` — sends file contents to your configured provider for embeddings.
+  * `--remote <owner/repo>` — fetches a repository from GitHub rather than reading a local one.
+
+  Nothing else makes a network request. Everything defaults off, and content returned through MCP or pasted into a hosted assistant is then subject to that client's data-handling policy.
 * **Vulnerability Reporting:** Please report security issues to `saadat@nextbridge.com`.
 
----
+</details>
 
 <details>
 <summary><b>Full CLI Reference</b></summary>
@@ -164,6 +214,8 @@ Output
 
 Budget & compression
   -b, --budget <tokens>              Token budget (e.g. 50k, 100000)
+  --model <name>                     Size the budget for a model's context window
+                                     (claude-opus-5, gpt-5.6, gemini-2.5-pro, …)
   --no-budget                        Disable token budget — include all files
   --compress <level>                 Compression ceiling: none|tier1|tier2|tier3-llm|partial
   --no-compress                      Disable all compression (alias for --compress none)
@@ -226,9 +278,8 @@ Commands
 
 </details>
 
----
-
-## MCP Server
+<details>
+<summary><b>MCP Server</b></summary>
 
 Exposes RepoCode as [Model Context Protocol](https://modelcontextprotocol.io) tools and resources for AI assistants.
 
@@ -243,14 +294,17 @@ Exposes RepoCode as [Model Context Protocol](https://modelcontextprotocol.io) to
 }
 ```
 
-## Architecture and Development
+</details>
+
+<details>
+<summary><b>Architecture and Development</b></summary>
 
 `@repocode/core` owns the entire pipeline. `repocode` (CLI) and `@repocode/mcp` both import it directly without subprocesses.
 
 Editor integrations are planned.
 
 ### Contributing
-Requires Node.js ≥ 22 and pnpm ≥ 10. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Requires Node.js ≥ 20 and pnpm ≥ 10. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
 git clone https://github.com/nextbridgehq/repocode.git
@@ -259,6 +313,33 @@ pnpm install
 pnpm -r build
 pnpm -r test
 ```
+
+</details>
+
+---
+
+## FAQ
+
+**`--pr` says "Would include: 0 files" — is it broken?**
+Not necessarily. `--pr` needs a base to diff against, which it gets from CI environment variables or the repository's configured git remote. Run it locally with no remote configured and outside CI, and there's nothing to detect a PR diff from, so the candidate list is empty. Pass `--base <branch>` (or use `--branch <name>` instead) to specify the comparison explicitly.
+
+**A file I expected is missing from the output — where did it go?**
+Run `--explain` to print the full ranked candidate list and why each file was or wasn't included — it tags excluded files with reasons like `[below-candidate-cut]`. Common causes: it ranked below the budget cut line, or it's excluded by `.gitignore`, a default ignore pattern, or `--exclude`. Use `--pin <path>` to force-include a specific file regardless of rank.
+
+**Does `--compress tier3-llm` or `--llm-provider` send my code anywhere?**
+Only `--llm-provider` gates a network call. The compression ceiling permits `tier3-llm` by default, but nothing leaves your machine until you've actually configured a provider with `--llm-provider`. See [Security and Privacy](#security-and-privacy) for the complete list of what can make a network request.
+
+**I changed `repocode.config.json` and nothing happened.**
+Precedence is `CLI flags > project config > presets > defaults` — a flag on the command line always overrides the file. If a key is silently ignored, check for a misspelling: unrecognized top-level keys log an `unknown config key` warning to stderr and are dropped, while the rest of the file still applies.
+
+**Can I use `repocode.config.js` instead of JSON?**
+Only in CLI mode, and only if you explicitly opt in — by default RepoCode blocks execution of JS config files as a security measure (arbitrary code execution from a config file is exactly the kind of thing you don't want running unattended in CI or an MCP server). Stick to `repocode.config.json` unless you specifically need computed config.
+
+**What happens when a secret is detected in a file?**
+Depends on `--security-mode`: `warn` (default) flags it but still includes the file, `exclude` drops the file entirely, `redact` masks the detected secret and includes the rest of the file, `fail` aborts the run. In MCP mode, detected secrets are redacted automatically before output is returned to the client.
+
+**`npx repocode .` is taking minutes, not seconds — is that normal?**
+It can be, and it's worth checking before assuming it's stuck. On one large monorepo we measured a plain `--dry-run` at over 4 minutes of wall time against under 1 second of CPU time — the bottleneck was filesystem discovery, not ranking or compression. If a run seems to hang, check that your biggest directories (`node_modules`, build output) are actually covered by `.gitignore` or `--exclude`, and consider `--max-file-size` to skip large generated files early.
 
 ## License
 

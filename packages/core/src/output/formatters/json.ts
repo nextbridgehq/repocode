@@ -31,11 +31,11 @@ export function formatJson(ctx: AssembledContext): string {
   return JSON.stringify({
     metadata: {
       version: PACKAGE_VERSION,
-      generated: ctx.header.generated,
+      ...(ctx.header.generated ? { generated: ctx.header.generated } : {}),
       repository: ctx.header.repository,
-      tokens: ctx.header.tokens,
+      ...(ctx.omitVolatileMetadata ? {} : { tokens: ctx.header.tokens }),
       budget: ctx.header.budget ?? null,
-      fileCount: ctx.header.fileCount,
+      ...(ctx.omitVolatileMetadata ? {} : { fileCount: ctx.header.fileCount }),
     },
     preamble: ctx.preamble || null,
     instructions: ctx.instructions || null,

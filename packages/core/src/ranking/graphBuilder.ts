@@ -1,9 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import { globby } from 'globby';
 import type { IgnoreConfig } from '../types.js';
 import { extractImportsFromFile } from '../git/importTracer.js';
-import { buildIgnoreFilter } from '../discovery/ignoreRules.js';
+import {
+  buildIgnoreFilter,
+  computeDefaultIncludeRoots,
+  globbyMulti,
+  withExtensionGlob,
+} from '../discovery/ignoreRules.js';
 import { FileCache } from '../cache/fileCache.js';
 import { SOURCE_GLOB } from '../languageResolvers/index.js';
 
@@ -71,7 +75,18 @@ export async function buildGraph(
 ): Promise<BuildGraphResult> {
   const fileCache = cache ?? FileCache.load(root);
 
-  const sourceFiles = await globby([SOURCE_GLOB], {
+  // A bare `globby([SOURCE_GLOB], { cwd: root })` has no ignore/prune of any kind, so its
+  // `**/*.{ts,...}` pattern walks node_modules (and every other default-excluded directory)
+  // in full — see ignoreRules.ts's computeDefaultIncludeRoots for why that turns a workspace
+  // monorepo's import-graph pass into a multi-second-to-multi-minute stall. Scope the walk the
+  // same way file discovery does: to the directories that actually contain source, never
+  // opening a node_modules-shaped one.
+  const extensionGlob = SOURCE_GLOB.slice(SOURCE_GLOB.lastIndexOf('/') + 1);
+  const sourcePatterns = ignore.useDefaultPatterns
+    ? withExtensionGlob(computeDefaultIncludeRoots(root), extensionGlob)
+    : [SOURCE_GLOB];
+
+  const sourceFiles = await globbyMulti(sourcePatterns, {
     cwd: root,
     onlyFiles: true,
     dot: false,
