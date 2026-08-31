@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "baseUrl": "../ts-path-alias/src",
+    "paths": {
+      "@out/*": ["*"]
+    }
+  }
+}

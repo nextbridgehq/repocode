@@ -1,0 +1,37 @@
+name: 'RepoCode Budget Check'
+description: "Fails the check if this PR's diff, plus its import-graph dependencies, does not fit a token budget."
+author: 'nextbridgehq'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Repository root to analyze. Must be the repo root in --pr mode -- pointing this at a subdirectory silently produces an empty, always-passing result rather than an error.'
+    required: false
+    default: '.'
+  budget:
+    description: "Token budget (e.g. 50k, 100000). Defaults to the repocode CLI's own default budget when unset."
+    required: false
+  model:
+    description: "Size the budget for a model's context window (e.g. claude-opus-5). Ignored if budget is set."
+    required: false
+  base:
+    description: 'Override the PR base branch. Usually unnecessary — auto-detected from GITHUB_BASE_REF on pull_request events.'
+    required: false
+  repocode-version:
+    description: 'npm dist-tag or version of repocode to run via npx'
+    required: false
+    default: 'latest'
+
+outputs:
+  fits:
+    description: '"true" if the PR''s diff and import context fit the budget, "false" otherwise'
+  excluded-count:
+    description: 'Number of files excluded for budget-related reasons'
+  total-tokens:
+    description: 'Total tokens in the would-be pack'
+
+runs:
+  using: 'node20'
+  main: 'packages/github-action/src/index.mjs'

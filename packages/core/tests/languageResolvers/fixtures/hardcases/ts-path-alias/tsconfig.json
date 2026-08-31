@@ -1,0 +1,10 @@
+{
+  // Path aliases, with a comment and a trailing comma to prove JSONC tolerance.
+  "compilerOptions": {
+    "baseUrl": "src",
+    "paths": {
+      "@app/*": ["app/*"],
+      "@shared": ["shared/index.ts"],
+    },
+  },
+}

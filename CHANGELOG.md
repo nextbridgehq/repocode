@@ -7,6 +7,36 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-08-31
+
+### Added
+
+- `@repocode/github-action` budget check: fails a PR's check when the diff and its required import context exceed the configured token budget. Dependency-free ESM, invoking the published CLI; consumed directly as a GitHub Action (`uses: owner/repo@tag`) rather than published to npm. Validated against this repository's own PRs in CI.
+- Two new MCP tools: `get_context` packs a task-scoped repository slice within a token budget, and `explain_selection` provides per-signal scoring and explains file inclusion or exclusion. Both integrate the existing query-reranking support through `configMapper`.
+- Golden-file coverage for all 8 supported languages and a C# resolver supporting namespace-to-directory mapping (namespace → directory, not namespace → file, unlike Java), including dotted .NET project folders (e.g. `Acme.Billing.Core/Services/`); `using static`, aliased `using`, and `global using` remain intentionally unsupported.
+- TypeScript path-alias resolution from `tsconfig`/`jsconfig` `paths`, with protection against aliases escaping the project root.
+- CI performance gates: packing a synthetic 10,000-file repository completes within 180s end-to-end, and ranking alone completes within 2s.
+- `examples/` — runnable shell scripts for the workflows described in the README (bug hunting, code review, explaining ranking, starting a new AI chat), plus a sample `repocode.config.json`.
+- `llms.txt`, so an LLM-based tool can discover RepoCode's docs and package layout without crawling the whole README.
+- `results/` — two trimmed SWE-bench Lite CSVs (184 instances total) and a methodology README behind the RepoCode-vs-Repomix comparison used in outreach, so the numbers are independently checkable. The full benchmark harness and exploratory runs stay local, per the existing benchmark-data convention.
+
+### Changed
+
+- Removed unreachable stdlib-filtering logic from the Rust resolver (`std::` imports never reached the code path it guarded — filtering already happened earlier, at extraction).
+
+### Fixed
+
+- Packing a workspace monorepo could hang: file discovery and import-graph building walked into `node_modules` and `dist` instead of pruning them.
+- `pnpm audit --audit-level=high` was failing on a command-injection advisory in `repomix`, a devDependency of the private benchmark harness used only as a comparison arm. Overridden to a patched version in `pnpm-workspace.yaml`.
+- CI's dependency and audit gate — `pnpm-lock.yaml` and `pnpm-workspace.yaml` were out of sync with what `pnpm audit --audit-level=high` expected.
+- `pnpm-lock.yaml` was missing the `@repocode/bench` workspace dependency block.
+- Python relative imports (`from . import x`, `from ..pkg import y`) now resolve within the importing file's own package.
+- Go import resolution for vendored (`vendor/`) and bare single-line imports (`import "fmt"`, including aliased and blank-identifier forms), including a directory-vs-file resolution bug that previously broke multi-hop traversal and all importer detection for Go.
+- Cross-language package-directory leakage (a Go package directory could admit files belonging to an unrelated resolver or language sharing that directory) and vendored imports being incorrectly shadowed by same-named local directories.
+- A stale import-resolution cache entry could persist across a resolver upgrade, silently keeping a pre-fix (wrong) resolution alive; the cache version now bumps to invalidate on upgrade.
+
+---
+
 ## [0.2.0] — 2026-08-18
 
 ### Added
@@ -48,5 +78,6 @@ Ranking was evaluated internally against SWE-bench Lite (held-out instances, 50k
 
 ---
 
+[0.3.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.1.0

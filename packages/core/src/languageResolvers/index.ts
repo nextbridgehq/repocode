@@ -8,9 +8,10 @@ import { rubyResolver } from './ruby.js';
 import { javaResolver } from './java.js';
 import { cppResolver } from './cpp.js';
 import { phpResolver } from './php.js';
+import { csharpResolver } from './csharp.js';
 
 const resolvers: LanguageResolver[] = [
-  tsResolver, pythonResolver, goResolver, rustResolver, rubyResolver, javaResolver, cppResolver, phpResolver,
+  tsResolver, pythonResolver, goResolver, rustResolver, rubyResolver, javaResolver, cppResolver, phpResolver, csharpResolver,
 ];
 
 const byExtension = new Map<string, LanguageResolver>();

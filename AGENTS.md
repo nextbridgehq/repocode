@@ -16,6 +16,7 @@ budget fitting.
 | `packages/core` | `@repocode/core` | Discovery, ranking, compression, budget fitting, output. The engine. |
 | `packages/cli` | `repocode` | Commander-based CLI. `bin: repocode`. |
 | `packages/mcp` | `@repocode/mcp` | MCP server. `bin: repocode-mcp`. |
+| `packages/github-action` | not on npm — consumed as `uses: owner/repo@tag` via the root `action.yml` | GitHub Action that fails a PR's check when the diff plus its import context doesn't fit a budget. Plain ESM, zero dependencies, shells out to the published CLI. |
 | `packages/bench` | gitignored | SWE-bench Lite harness. Not tracked in git — exists locally, methodology stays private. |
 | `packages/stats` | gitignored | Raw benchmark result CSVs. Data, not code — local only, never committed. |
 
@@ -28,12 +29,15 @@ apply stable ordering → scan for secrets → assemble.
 
 ```bash
 pnpm install
+pnpm audit --audit-level=high   # dependency vulnerability gate
 pnpm -r build       # tsc, per package
 pnpm -r typecheck   # tsc --noEmit
-pnpm -r test        # vitest run — 728 tests
+pnpm -r test        # vitest run — 841 passing, 1 skipped (plus bench's 32 if it exists locally)
+pnpm --filter @repocode/core test:perf   # synthetic 10k-file pack, wall-clock regression gate —
+                                         # CI-only, not part of `pnpm -r test`
 ```
 
-CI runs exactly these four plus `node packages/cli/dist/cli.js --version`. There is no linter
+CI runs exactly these six plus `node packages/cli/dist/cli.js --version`. There is no linter
 and no formatter; match the style of the file you are editing.
 
 ## Conventions
@@ -44,8 +48,7 @@ and no formatter; match the style of the file you are editing.
 - **Tests are `vitest`**, in `packages/*/tests/`, mirroring the `src/` layout.
 - **Write the test first.** Every behavioural claim in this repo is expected to have a test
   that fails without the change.
-- **Node >= 20**, pnpm 10. (`CONTRIBUTING.md` currently says Node 22; `package.json` engines
-  say 20 and CI runs 20. The engines field is authoritative.)
+- **Node >= 20**, pnpm 10.
 
 ## Things that will burn you
 

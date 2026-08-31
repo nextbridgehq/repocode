@@ -91,7 +91,7 @@ describe('FileCache', () => {
     const cachePath = path.join(tmpDir, '.repocode', 'cache.json');
     expect(fs.existsSync(cachePath)).toBe(true);
     const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-    expect(parsed.version).toBe(1);
+    expect(parsed.version).toBe(2);
     expect(parsed.files['a.ts'].accurateTokens).toBe(5);
   });
 

@@ -11,8 +11,10 @@ export interface CacheFileEntry {
   imports?: string[];
 }
 
+const CACHE_VERSION = 2;
+
 interface FileCacheData {
-  version: 1;
+  version: typeof CACHE_VERSION;
   files: Record<string, CacheFileEntry>;
 }
 
@@ -90,7 +92,7 @@ export class FileCache {
   private static readRaw(cachePath: string): FileCacheData | null {
     try {
       const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf-8')) as FileCacheData;
-      if (parsed.version !== 1 || typeof parsed.files !== 'object' || parsed.files === null) {
+      if (parsed.version !== CACHE_VERSION || typeof parsed.files !== 'object' || parsed.files === null) {
         return null;
       }
       return parsed;
@@ -101,7 +103,7 @@ export class FileCache {
 
   static load(root: string): FileCache {
     const cachePath = path.join(root, '.repocode', 'cache.json');
-    return new FileCache(cachePath, FileCache.readRaw(cachePath) ?? { version: 1, files: {} });
+    return new FileCache(cachePath, FileCache.readRaw(cachePath) ?? { version: CACHE_VERSION, files: {} });
   }
 
   get(relPath: string, content: string): CacheFileEntry | undefined {
@@ -157,7 +159,7 @@ export class FileCache {
    * overwritten by our (possibly stale) in-memory snapshot.
    */
   private mergeWithDisk(): FileCacheData {
-    const merged = FileCache.readRaw(this.cachePath) ?? { version: 1 as const, files: {} };
+    const merged = FileCache.readRaw(this.cachePath) ?? { version: CACHE_VERSION, files: {} };
 
     for (const key of this.writtenKeys) {
       const entry = this.data.files[key];

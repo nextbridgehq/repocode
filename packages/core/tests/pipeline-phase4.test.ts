@@ -84,7 +84,7 @@ describe('Phase 4A pipeline integration', () => {
       const cachePath = path.join(fixtureDir, '.repocode', 'cache.json');
       expect(fs.existsSync(cachePath)).toBe(true);
       const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-      expect(parsed.version).toBe(1);
+      expect(parsed.version).toBe(2);
       expect(typeof parsed.files).toBe('object');
     } finally {
       teardown();

@@ -14,7 +14,7 @@ export type {
   TUIFile, TUIPipelineResult, PresetConfig,
   CompressConfig, SelectiveCompressConfig, LLMConfig, LLMProviderName,
   QueryConfig, QueryMode, InstructionDef, InstructionConfig,
-  CacheStat, CacheStats,
+  CacheStat, CacheStats, SignalScores,
 } from './types.js';
 export { getCompressionTier } from './types.js';
 export { traceImports } from './git/importTracer.js';

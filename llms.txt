@@ -1,12 +1,14 @@
 # RepoCode
 
-> RepoCode is a CLI that packs a repository into task-scoped, token-budgeted context for coding agents and LLMs — give it a task and a budget, and it finds the files that matter.
+> RepoCode builds the smallest useful codebase context for a task, for AI coding agents and LLMs — give it a task, query, diff, or pull request plus a token budget, and it finds the relevant code, follows what it depends on, and fits the most useful version of it into that budget.
 
-Discovers files, ranks them by structural importance, import centrality, recency, and relevance to a query, then fits the highest-ranked ones into a token budget — compressing lower-ranked files first rather than truncating. Scopes to `--query`, `--diff`, `--branch`, or `--pr` instead of packing a whole repository. Ships as a CLI, an MCP server, and an embeddable core library. No telemetry; nothing leaves the machine unless a network-touching flag (`--llm-provider`, `--query-mode semantic`, `--remote`) is explicitly set.
+Discovers files, ranks them by structural importance, import centrality, recency, and relevance to a query, then fits the highest-ranked ones into a token budget — compressing lower-ranked files first rather than truncating. Scopes to `--query`, `--diff`, `--branch`, or `--pr` instead of packing a whole repository. Import tracing covers 11 languages: TypeScript, JavaScript, Python, Go, Rust, Ruby, Java, C, C++, PHP, and C#. Ships as a CLI, an MCP server, a GitHub Action that fails a PR check when its diff plus import context won't fit a budget, and an embeddable core library. No telemetry; nothing leaves the machine unless a network-touching flag (`--llm-provider`, `--query-mode semantic`, `--remote`) is explicitly set.
 
 ## Docs
 
-- [README](https://github.com/nextbridgehq/repocode/blob/main/README.md): quickstart, CLI reference, configuration, MCP setup, FAQ
+- [README](https://github.com/nextbridgehq/repocode/blob/main/README.md): quickstart, CLI reference, configuration, FAQ
+- [MCP server](https://github.com/nextbridgehq/repocode/blob/main/packages/mcp/README.md): tool reference and per-client setup for Claude Desktop, Claude Code, Cursor, and Windsurf
+- [GitHub Action](https://github.com/nextbridgehq/repocode/blob/main/packages/github-action/README.md): setup, inputs and outputs, CI preconditions
 - [CHANGELOG](https://github.com/nextbridgehq/repocode/blob/main/CHANGELOG.md): release history
 - [Architecture](https://github.com/nextbridgehq/repocode/blob/main/docs/architecture.md): pipeline design
 
@@ -18,5 +20,6 @@ Discovers files, ranks them by structural importance, import centrality, recency
 
 ## Optional
 
+- [Benchmark methodology](https://github.com/nextbridgehq/repocode/blob/main/results/README.md): how ranking is evaluated against SWE-bench Lite
 - [Contributing](https://github.com/nextbridgehq/repocode/blob/main/CONTRIBUTING.md): build from source, run tests
 - [License](https://github.com/nextbridgehq/repocode/blob/main/LICENSE): MIT

@@ -42,6 +42,16 @@ describe('buildConfigFromParams', () => {
     const config = await buildConfigFromParams({ path: FIXTURE, include: ['**/*.ts'] });
     expect(config.include).toEqual(['**/*.ts']);
   });
+
+  it('sets query from query param', async () => {
+    const config = await buildConfigFromParams({ path: FIXTURE, query: 'fix the login bug' });
+    expect(config.query).toBe('fix the login bug');
+  });
+
+  it('leaves query undefined when not provided', async () => {
+    const config = await buildConfigFromParams({ path: FIXTURE });
+    expect(config.query).toBeUndefined();
+  });
 });
 
 describe('validateDirectory', () => {

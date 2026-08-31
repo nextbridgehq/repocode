@@ -2,7 +2,7 @@
 
 ## Overview
 
-RepoCode is a **TypeScript strict ESM pnpm monorepo** containing three packages that each publish to a separate destination. All packages share a single dependency — `@repocode/core` — which owns the entire pipeline. Nothing spawns the CLI as a subprocess; everything imports the library directly.
+RepoCode is a **TypeScript strict ESM pnpm monorepo**. Three packages publish to npm and share a single dependency — `@repocode/core`, which owns the entire pipeline — importing the library directly rather than spawning the CLI as a subprocess. A fourth package, `packages/github-action`, is not published to npm; it's consumed as a GitHub Action and takes the opposite approach, shelling out to the published `repocode` CLI as a subprocess (it has no workspace dependency on `@repocode/core`).
 
 A VS Code/Cursor/Windsurf extension is planned but has no source or package manifest in this tree yet — see "Planned: editor extension" below.
 
@@ -15,15 +15,22 @@ RepoCode/
 ├── packages/
 │   ├── core/               → npm: @repocode/core
 │   ├── cli/                → npm: repocode
-│   └── mcp/                → npm: @repocode/mcp
+│   ├── mcp/                → npm: @repocode/mcp
+│   ├── github-action/      → not on npm; consumed via `uses: owner/repo@tag`
+│   ├── bench/               gitignored — SWE-bench Lite harness, local only
+│   └── stats/                gitignored — raw benchmark result CSVs, local only
+├── action.yml               Root manifest for the GitHub Action (points at packages/github-action)
 ├── scripts/
-│   ├── bump-version.js     Synchronise versions across all packages
+│   ├── bump-version.js     Synchronise versions across the three npm packages
 │   └── release.sh          One-command release helper
 ├── .github/workflows/
 │   ├── ci.yml              Run tests on every push and PR
-│   └── release.yml         Publish all packages on v* tags
+│   └── release.yml         Publish the three npm packages on v* tags
 ├── docs/
 │   └── architecture.md     This file
+├── examples/                 Runnable shell scripts for the workflows in the README
+├── llms.txt                  LLM-discoverable pointer to docs and package layout
+├── results/                  Trimmed SWE-bench Lite CSVs backing the README's comparison table
 ├── pnpm-workspace.yaml
 └── README.md
 ```
@@ -63,7 +70,7 @@ packages/core/src/
 ├── ranking/
 │   ├── pass1Ranker.ts      Structural signals: extension tier, depth, size, keywords, recency
 │   ├── pass2Ranker.ts      Blends token-density with import-graph centrality for budget-fitting
-│   ├── graphBuilder.ts     buildGraph() — static import graph (TS/JS/Python/Go)
+│   ├── graphBuilder.ts     buildGraph() — static import graph, all 8 resolved languages
 │   └── signals.ts          Individual signal scorers
 ├── query/
 │   ├── index.ts            Query processing and TF-IDF / Semantic reranking
@@ -82,7 +89,18 @@ packages/core/src/
 ├── instructions/
 │   └── builtinInstructions.ts Standard templates and system prompts
 ├── languageResolvers/
-│   └── index.ts            Language-specific parsers (TS, Rust, Go, Python, etc.)
+│   ├── index.ts            Dispatches to the resolver for a file's language
+│   ├── types.ts            Shared resolver interface
+│   ├── typescript.ts       Also covers JavaScript — no separate JS resolver
+│   ├── python.ts
+│   ├── go.ts
+│   ├── rust.ts
+│   ├── java.ts
+│   ├── ruby.ts
+│   ├── php.ts
+│   ├── cpp.ts               C/C++
+│   └── csharp.ts           Namespace → directory (not namespace → file, unlike Java);
+│                           `using static`/aliased/`global using` deliberately unsupported
 ├── output/
 │   ├── assembler.ts        Assembles final output string
 │   ├── treeGenerator.ts    Directory tree renderer
@@ -188,11 +206,19 @@ packages/mcp/src/
 │   ├── searchFiles.ts      search_files — regex content search across discovered files
 │   ├── getFileContext.ts   get_file_context — file + transitive import graph
 │   ├── getGitContext.ts    get_git_context — diff/log/branch changes
-│   └── getArchitecture.ts  get_architecture — structural overview of the codebase
+│   ├── getArchitecture.ts  get_architecture — structural overview of the codebase
+│   ├── getContext.ts       get_context — task-scoped repo slice within a token budget, query-aware
+│   └── explainSelection.ts explain_selection — why files were/weren't selected, per-signal breakdown
+├── output/
+│   └── compactExplain.ts   Compact formatter for explain_selection's report
 └── resources/
     ├── listFiles.ts        list_files — file metadata (path, size, token estimate)
     └── getFile.ts          get_file — single file content
 ```
+
+`get_context` and `explain_selection` thread the existing query-reranking support through
+`configMapper.ts`, which the other tools don't use — they're task-oriented, unlike the
+`pack_codebase`-shaped tools that predate them (kept alongside, not replaced).
 
 ### What it adds over core
 
@@ -218,6 +244,25 @@ Any MCP-compatible client (Claude Desktop, Cursor, etc.) adds this to its config
 
 ---
 
+## Package 4: `packages/github-action` (not published to npm)
+
+**Role:** GitHub Action that fails a PR's check when the diff plus its required import context doesn't fit a configured token budget. The one package that does *not* import `@repocode/core` — it shells out to the published `repocode` CLI as a subprocess instead, so it stays dependency-free.
+
+### Source layout
+
+```
+packages/github-action/
+├── src/
+│   ├── classify.mjs        Pure classification logic: does the diff fit the budget?
+│   └── index.mjs           Entrypoint — resolves the PR base ref, invokes the CLI, sets outputs
+└── tests/
+    └── classify.test.mjs
+```
+
+Consumed directly from the root `action.yml` via `uses: owner/repo@tag`, not installed from npm. CI self-tests it against this repository's own PRs (`action-self-test` job in `ci.yml`, gated to `pull_request` events).
+
+---
+
 ## Planned: editor extension
 
 A VS Code/Cursor/Windsurf extension (`packages/vscode-extension`) is planned — designed to wrap `runPipeline`/`startWatch` the same way the CLI and MCP server do, bundled with esbuild and published to both the VS Code Marketplace and Open VSX — but it has no source or package manifest in this tree yet, so it's not part of the build, release, or version-bump steps described below.
@@ -228,13 +273,17 @@ A VS Code/Cursor/Windsurf extension (`packages/vscode-extension`) is planned —
 
 ### CI workflow (`.github/workflows/ci.yml`)
 
-Triggers on every push and pull request to `main`.
+Triggers on every push to `main` or a `v*` branch, and on every pull request to `main`.
 
 ```
-checkout → pnpm install (frozen) → pnpm -r build → pnpm -r typecheck → pnpm -r test
+checkout → pnpm install (frozen) → pnpm audit --audit-level=high → pnpm -r build
+→ pnpm -r typecheck → pnpm -r test → node packages/cli/dist/cli.js --version
+→ pnpm --filter @repocode/core test:perf
 ```
 
-`pnpm -r build` respects topological order: `core` builds before `cli` and `mcp`. The `test` script in every package runs `vitest run` (Vitest unit tests only).
+`pnpm -r build` respects topological order: `core` builds before `cli` and `mcp`. The `test` script in every package runs `vitest run` (Vitest unit tests only). `test:perf` is CI-only and not part of `pnpm -r test`: it packs a synthetic 10,000-file repo and asserts a wall-clock ceiling (180s end-to-end, 2s for ranking alone), guarding a regression class a whole-pipeline token budget can hide.
+
+A separate `action-self-test` job runs only on `pull_request` events: it exercises `packages/github-action` against this repository's own PR diff, both the expected-fail path (a 1-token budget) and the expected-pass path.
 
 ### Release workflow (`.github/workflows/release.yml`)
 
@@ -246,10 +295,12 @@ checkout
 → pnpm -r build
 → pnpm -r typecheck
 → pnpm -r test             ← fail-fast gate before any publish
-→ publish @repocode/core   (npm, needs NPM_TOKEN)
-→ publish @repocode/mcp    (npm, needs NPM_TOKEN)
-→ publish repocode         (npm, needs NPM_TOKEN)
+→ publish @repocode/core   (npm, --provenance, needs NPM_TOKEN)
+→ publish @repocode/mcp    (npm, --provenance, needs NPM_TOKEN)
+→ publish repocode         (npm, --provenance, needs NPM_TOKEN)
 ```
+
+`--provenance` needs `permissions: id-token: write`, granted at the job level in `release.yml`. `packages/github-action` is deliberately absent from this pipeline — it isn't versioned or published here at all.
 
 **Publish order matters:** `@repocode/core` must be on npm before `@repocode/mcp` and `repocode` are installed by end users (since those two depend on it). Within `cli` and `mcp`, the order between them doesn't matter — neither depends on the other.
 
@@ -290,3 +341,4 @@ The convenience wrapper `scripts/release.sh` runs the full sequence:
 | Per-file content-hash cache | SHA-256 of file content as cache key — immune to mtime drift from git operations. Only re-runs tiktoken and import extraction on files that actually changed. |
 | SIGTERM handler registered before `startWatch()` | The "Watching" log line is printed inside `startWatch` before it returns. Registering signal handlers first closes a race window where a SIGTERM arriving right after that log line would find no handler and kill the process with exit code `null`. |
 | `onlyBuiltDependencies` in `pnpm-workspace.yaml` | pnpm 10 requires explicit allowlisting of packages whose `postinstall` build scripts are permitted to run. Without this, `pnpm install --frozen-lockfile` fails in CI for packages like `esbuild`. |
+| Import resolution: known unsupported cases | `tsconfig.json`/`jsconfig.json` `extends` chains are not followed (only the root config's own `paths`/`baseUrl` are read); a `paths` value may only use a single `*` wildcard or an exact key, not an arbitrary glob; Python's bare `from . import x` (importing the enclosing package itself, not a named module within it) is not resolved; a dynamic `import()`/`require()` call with a computed (non-string-literal) path is not captured; C#'s `using static Type;`, `using Alias = X.Y.Z;`, and `global using X.Y.Z;` directives are not resolved — only a plain `using X.Y.Z;` namespace import is. |

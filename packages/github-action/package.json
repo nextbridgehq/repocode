@@ -1,0 +1,13 @@
+{
+  "name": "@repocode/github-action",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action: fails the check if a PR's diff and its import context don't fit a token budget",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}

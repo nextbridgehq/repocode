@@ -22,3 +22,39 @@ jobs:
       - run: pnpm -r typecheck
       - run: pnpm -r test
       - run: node packages/cli/dist/cli.js --version
+      - run: pnpm --filter @repocode/core test:perf
+
+  action-self-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Expect this to fail (tiny budget)
+        id: tiny
+        continue-on-error: true
+        uses: ./
+        with:
+          budget: '1'
+      - name: Assert fail path fired correctly
+        if: steps.tiny.outputs.fits != 'false' || steps.tiny.outcome != 'failure'
+        run: |
+          echo "::error::expected the tiny-budget run to fail with fits=false, got outcome=${{ steps.tiny.outcome }} fits=${{ steps.tiny.outputs.fits }}"
+          exit 1
+      - name: Expect this to pass (default budget)
+        id: normal
+        uses: ./
+      - name: Assert pass path fired correctly
+        if: steps.normal.outputs.fits != 'true'
+        run: |
+          echo "::error::expected the normal run to pass with fits=true, got fits=${{ steps.normal.outputs.fits }}"
+          exit 1
+      - name: Assert the pass was not vacuous
+        if: steps.normal.outputs['total-tokens'] == '0'
+        run: |
+          echo "::error::the normal run reported fits=true with total-tokens=0 — it analyzed nothing (base ref resolved to an empty diff, or path is not the repo root)"
+          exit 1

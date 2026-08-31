@@ -3,15 +3,53 @@ import path from 'path';
 import { globby } from 'globby';
 import type { TraceResult } from '../types.js';
 import { getResolver, SOURCE_GLOB } from '../languageResolvers/index.js';
+import type { LanguageResolver } from '../languageResolvers/types.js';
+
+function isDirectory(absPath: string): boolean {
+  try {
+    return fs.statSync(absPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Expand a resolved package directory into the source files it contains.
+ *  Go's resolver returns a package directory rather than a file; a Go package is exactly
+ *  the source files in one directory (subdirectories are separate packages), so this is
+ *  deliberately non-recursive. Files with no registered resolver are skipped. */
+function expandPackageDirectory(resolved: string, root: string, resolver: LanguageResolver): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(path.join(root, resolved), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (getResolver(entry.name) !== resolver) continue;
+    files.push(`${resolved}/${entry.name}`);
+  }
+  return files;
+}
 
 // Exported so graphBuilder.ts can reuse without duplicating patterns
 export function extractImportsFromFile(filePath: string, content: string, root: string): string[] {
   const resolver = getResolver(filePath);
   if (!resolver) return [];
   const specs = resolver.extractImports(content, filePath);
-  const results = specs
-    .map(spec => resolver.resolveImport(spec, filePath, root))
-    .filter((p): p is string => p !== null);
+  const results: string[] = [];
+  for (const spec of specs) {
+    const resolved = resolver.resolveImport(spec, filePath, root);
+    if (resolved === null) continue;
+    // A resolver may resolve to a package directory rather than a file. The BFS below keys
+    // its map by file path, so a directory edge would be a dead end — expand it here.
+    if (isDirectory(path.join(root, resolved))) {
+      results.push(...expandPackageDirectory(resolved, root, resolver));
+    } else {
+      results.push(resolved);
+    }
+  }
   return [...new Set(results)];
 }
 

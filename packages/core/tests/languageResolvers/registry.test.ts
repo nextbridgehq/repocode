@@ -41,10 +41,15 @@ describe('getResolver', () => {
     expect(getResolver('App.php')?.name).toBe('php');
   });
 
+  it('returns csharp resolver for .cs files', () => {
+    expect(getResolver('Program.cs')?.name).toBe('csharp');
+  });
+
   it('SOURCE_GLOB includes all new language extensions', () => {
     expect(SOURCE_GLOB).toContain('rs');
     expect(SOURCE_GLOB).toContain('rb');
     expect(SOURCE_GLOB).toContain('java');
     expect(SOURCE_GLOB).toContain('php');
+    expect(SOURCE_GLOB).toContain('cs');
   });
 });

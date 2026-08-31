@@ -13,7 +13,7 @@ async function makeClient() {
 }
 
 describe('MCP server integration', () => {
-  it('lists all 5 tools', async () => {
+  it('lists all 7 tools', async () => {
     const client = await makeClient();
     const result = await client.listTools();
     const names = result.tools.map(t => t.name);
@@ -22,7 +22,9 @@ describe('MCP server integration', () => {
     expect(names).toContain('get_file_context');
     expect(names).toContain('get_git_context');
     expect(names).toContain('get_architecture');
-    expect(names.length).toBe(5);
+    expect(names).toContain('get_context');
+    expect(names).toContain('explain_selection');
+    expect(names.length).toBe(7);
   });
 
   it('lists 2 resource templates', async () => {

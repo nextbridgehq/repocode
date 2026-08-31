@@ -19,6 +19,7 @@ export async function buildConfigFromParams(
   params: {
     path?: string;
     budget?: number;
+    query?: string;
     noBudget?: boolean;
     include?: string[];
     exclude?: string[];
@@ -59,6 +60,7 @@ export async function buildConfigFromParams(
     ...(params.compress && params.compress !== 'none'
       ? { compress: params.compress as CompressionLevel }
       : {}),
+    ...(params.query !== undefined ? { query: params.query } : {}),
   } as Partial<RepoCodeConfig>, { allowJsConfig: false });
 
   // Apply MCP security defaults unless caller explicitly set a security mode

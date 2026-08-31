@@ -5,6 +5,8 @@ import { registerSearchFiles } from './tools/searchFiles.js';
 import { registerGetFileContext } from './tools/getFileContext.js';
 import { registerGetGitContext } from './tools/getGitContext.js';
 import { registerGetArchitecture } from './tools/getArchitecture.js';
+import { registerGetContext } from './tools/getContext.js';
+import { registerExplainSelection } from './tools/explainSelection.js';
 import { registerListFiles, registerGetFile } from './resources/index.js';
 
 export function createServer(): McpServer {
@@ -17,6 +19,8 @@ export function createServer(): McpServer {
   registerGetFileContext(server);
   registerGetGitContext(server);
   registerGetArchitecture(server);
+  registerGetContext(server);
+  registerExplainSelection(server);
   registerListFiles(server);
   registerGetFile(server);
   return server;

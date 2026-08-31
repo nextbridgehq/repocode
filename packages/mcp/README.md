@@ -70,6 +70,8 @@ claude mcp add RepoCode npx -- -y -p @repocode/mcp repocode-mcp
 | `get_file_context` | Read a file plus its transitive import graph up to a configurable depth. |
 | `get_git_context` | Get recent git diff, log, or branch changes. |
 | `get_architecture` | Get a structural overview: directory tree, file counts, language breakdown. |
+| `get_context` | Pack the files most relevant to a task into AI-ready context, fit to a token budget. Returns packed content + `_meta`. |
+| `explain_selection` | Explain which files `get_context` would select for a task, and why, without returning their content — a compact, budget-cheap alternative for deciding whether to call `get_context` at all. |
 
 ## Available Resources
 
@@ -80,7 +82,7 @@ claude mcp add RepoCode npx -- -y -p @repocode/mcp repocode-mcp
 
 ## Tool Response: `_meta`
 
-The `pack_repository` tool returns a `_meta` object alongside the packed content:
+The `pack_repository` and `get_context` tools both return an identical `_meta` object alongside the packed content (`explain_selection` returns no `_meta` — only the compact text explanation):
 
 ```json
 {

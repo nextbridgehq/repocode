@@ -2,8 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import type { LanguageResolver } from './types.js';
 
-const STDLIB_PREFIXES = ['std::', 'core::', 'alloc::'];
-
 // Match: mod foo; (module declarations)
 const MOD_DECL = /\bmod\s+(\w+)\s*;/g;
 // Match: use crate::, use super::, use self:: paths
@@ -26,8 +24,8 @@ export const rustResolver: LanguageResolver = {
   resolveImport(importSpec: string, fromFile: string, rootDir: string): string | null {
     // External crates
     if (importSpec.startsWith('extern:')) return null;
-    // Stdlib
-    if (STDLIB_PREFIXES.some(p => importSpec.startsWith(p))) return null;
+    // Stdlib (`use std::…`) never reaches here: USE_PATH only extracts crate::/super::/self::
+    // prefixes, so a stdlib path is filtered at extraction and produces no spec at all.
 
     const fromDir = path.dirname(fromFile);
 

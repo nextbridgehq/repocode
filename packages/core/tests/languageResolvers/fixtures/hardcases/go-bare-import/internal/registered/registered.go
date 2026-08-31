@@ -1,0 +1,3 @@
+package registered
+
+func Init() {}
