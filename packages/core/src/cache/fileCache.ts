@@ -11,7 +11,10 @@ export interface CacheFileEntry {
   imports?: string[];
 }
 
-const CACHE_VERSION = 2;
+/** Bump whenever a language resolver changes what it resolves: cached `imports` are keyed by
+ *  file content only, so an old resolution would otherwise outlive the fix.
+ *  3: Python resolver learned src/ roots, packages, and `from pkg import submodule`. */
+const CACHE_VERSION = 3;
 
 interface FileCacheData {
   version: typeof CACHE_VERSION;
