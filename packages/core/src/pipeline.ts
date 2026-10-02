@@ -114,6 +114,11 @@ function assembleAndFormat(
   return formatOutput(ctx, config.output.format);
 }
 
+
+/** Share of the budget a query run holds back from admission so the top-ranked files can be upgraded
+ *  to whole files. Tuned on SWE-bench Lite at 50k; see CHANGELOG. */
+const QUERY_UPGRADE_RESERVE = 0.85;
+
 export async function runPipeline(
   config: RepoCodeConfig,
   options?: { cache?: FileCache },
@@ -287,8 +292,10 @@ export async function runPipeline(
   // budget can only extend the candidate set, never reorder it.
   // The density scale likewise comes from the whole set, so the blend is a property of the
   // repo rather than of whichever subset happens to be in hand.
+  // With a query, the reranked score already encodes relevance; density would divide it by
+  // file size and bury every large match (see rankPass2).
   const pass2Ranked = rankPass2(
-    reranked, config.ranking.pinned, centralityMap, densityScaleFor(reranked),
+    reranked, config.ranking.pinned, centralityMap, densityScaleFor(reranked), !config.query,
   );
 
   const { candidates, dropped, budget } = computeBudget(pass2Ranked, config, instructionContent);
@@ -315,6 +322,9 @@ export async function runPipeline(
       llmBudgetTokens: config.llm?.budgetTokens,
       securityMode: config.security.enabled ? config.security.mode : undefined,
       concurrency: config.concurrency,
+      // With a query the top of the ranking is what the task needs; give it whole files.
+      upgradeOrder: config.query ? 'depth' : 'breadth',
+      upgradeReserve: config.query ? QUERY_UPGRADE_RESERVE : undefined,
     },
     budget
   ).finally(() => llmCache?.save());

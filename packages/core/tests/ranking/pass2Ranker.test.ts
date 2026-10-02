@@ -121,4 +121,49 @@ describe('rankPass2', () => {
 
     expect(large.filter(p => p !== 'c.ts')).toEqual(small);
   });
+
+  describe('with useDensity=false (query-ranked input)', () => {
+    // Measured on pytest-dev__pytest-11143: the query lifted the gold file from rank 283 to 13,
+    // and dividing by its ~11,500 tokens dropped it to 509, behind empty __init__.py files.
+    it('a large, strongly query-matched file outranks an empty weakly-matched file', () => {
+      const gold = makeRanked('src/rewrite.py', 46_000, 0.76);
+      const empty = makeRanked('pkg/__init__.py', 0, 0.21);
+      const result = rankPass2([gold, empty], [], undefined, undefined, false);
+      expect(result[0].path).toBe('src/rewrite.py');
+    });
+
+    // psf__requests-2317: with a 0.3 weight, vendored chardet/urllib3 files (centrality 0.6-1.0,
+    // no query match) outranked sessions.py. Centrality breaks ties; it does not outvote the query.
+    it('a well-matched file outranks a barely-matched but highly central one', () => {
+      const matched = makeRanked('requests/sessions.py', 1000, 0.7);
+      const vendored = makeRanked('requests/packages/chardet/mbcssm.py', 1000, 0.5);
+      const centralityMap = new Map([['/root/requests/packages/chardet/mbcssm.py', 1.0]]);
+      const result = rankPass2([vendored, matched], [], centralityMap, undefined, false);
+      expect(result[0].path).toBe('requests/sessions.py');
+    });
+
+    it('blends the incoming score with centrality, ignoring size', () => {
+      const a = makeRanked('a.ts', 100_000, 0.5);
+      const centralityMap = new Map([['/root/a.ts', 1.0]]);
+      const [result] = rankPass2([a], [], centralityMap, undefined, false);
+      expect(result.score).toBeCloseTo(0.85 * 0.5 + 0.15 * 1.0);
+    });
+
+    it('keeps relative order when the set grows, with no density scale needed', () => {
+      const a = makeRanked('a.ts', 4000, 0.5);
+      const b = makeRanked('b.ts', 400, 0.6);
+      const c = makeRanked('c.ts', 4, 0.9);
+      const small = rankPass2([a, b], [], undefined, undefined, false).map(f => f.path);
+      const large = rankPass2([a, b, c], [], undefined, undefined, false).map(f => f.path);
+      expect(large.filter(p => p !== 'c.ts')).toEqual(small);
+    });
+
+    it('pinned files still lead with their score unchanged', () => {
+      const pinned = makeRanked('pinned.ts', 100, 0.1);
+      const other = makeRanked('other.ts', 100, 0.9);
+      const result = rankPass2([other, pinned], ['pinned.ts'], undefined, undefined, false);
+      expect(result[0].path).toBe('pinned.ts');
+      expect(result[0].score).toBe(0.1);
+    });
+  });
 });

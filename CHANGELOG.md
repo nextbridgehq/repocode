@@ -7,6 +7,26 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- `--query-file <path>` reads the query from a file, so a whole issue or stack trace can drive ranking. It is too long for `--query` on Windows.
+
+### Changed
+
+- Query ranking rewritten. BM25 replaces TF-IDF. The tokenizer splits camelCase and snake_case identifiers, applies light stemming, and drops English filler and language keywords. File-name, definition, import and comment matches are weighted by term rarity and work across languages; they previously recognised only JavaScript/TypeScript syntax. A path or dotted module named in the query ranks that file first. Changelogs are down-weighted. Scores are normalised by saturation against the median match instead of percentiles, so strong evidence keeps its lead.
+- With a query, 85% of the budget is held back from admission and spent upgrading the highest-ranked files to full content, in rank order. Previously admission filled the budget with cheap versions of ~80 files, so the top-ranked file arrived at about 10% of its content. The top-ranked file is always admitted; the hold-back applies to the rest. A query pack is now a handful of whole files plus a light tail (about 10 files at 50k, down from about 80) instead of a wide pack of fragments. On 158 SWE-bench Lite instances at 50k, usable recall with a title query went from 39% to 62%.
+- Query scores are normalised against the 90th percentile of matching files rather than the median, and import centrality carries 15% of the blended score instead of 30% when a query is given. Vendored packages (chardet, urllib3) no longer outrank the file a query names.
+- A query with a body (a whole issue passed via `--query-file`) is shaped before scoring: title terms count five times as much as body terms, terms found in more than 30% of files are dropped, and only the 40 most distinctive terms are kept. On the same instances this raised ranking R@10 with the whole issue from 51.9% to 57.6%.
+
+### Fixed
+
+- `--query` had almost no effect on what was packed. Pass-2 ranking divided the query-reranked score by file size, so any file larger than a few hundred tokens fell below empty `__init__.py` files regardless of how well it matched. With a query, pass 2 now blends the query score with import centrality only.
+- Python import resolution missed most real-world imports: packages kept under `src/` or `lib/`, packages imported via `__init__.py`, `from package import submodule`, parenthesised multi-line imports, `from . import sibling`, and comma-separated `import a, b`. On pytest only 11 of 235 files resolved. The file-cache version is bumped so stale resolutions are discarded.
+
+---
+
 ## [0.3.0] — 2026-08-31
 
 ### Added

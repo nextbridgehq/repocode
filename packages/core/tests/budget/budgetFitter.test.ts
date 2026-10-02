@@ -113,6 +113,85 @@ function makeTieredContent(): string {
   ].join('\n');
 }
 
+describe('fitToBudget upgradeOrder', () => {
+  // A large top-ranked file and many small ones. Breadth-first upgrading spends the headroom a
+  // step at a time across all of them, so the large file never reaches full content — measured
+  // on pytest-dev__pytest-11143, the gold file arrived with 8.9% of its content.
+  // Python content, labelled Python, so the compressors can shrink it and leave headroom.
+  const py = (p: string, content: string, score: number) => ({ ...makeRanked(p, content, score), language: 'python' });
+  const mk = () => [
+    py('order/top.py', 'def f(x):\n    return x + 1  # body\n'.repeat(300), 0.9),
+    ...Array.from({ length: 30 }, (_, i) =>
+      py(`order/small${i}.py`, `def g${i}(y):\n    return y * 2  # body\n`.repeat(20), 0.5 - i * 0.01)),
+  ];
+  const budget = { maxTokens: 9_000, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget: 9_000 };
+
+  it('depth: the top-ranked file is upgraded to full content first', async () => {
+    const { included } = await fitToBudget(mk(), { pinned: [], compress: 'partial', upgradeOrder: 'depth' }, budget);
+    expect(included.find(f => f.path === 'order/top.py')?.compressionLevel).toBe('none');
+  });
+
+  it('depth and breadth include the same set of files', async () => {
+    const depth = await fitToBudget(mk(), { pinned: [], compress: 'partial', upgradeOrder: 'depth' }, budget);
+    const breadth = await fitToBudget(mk(), { pinned: [], compress: 'partial' }, budget);
+    expect(depth.included.map(f => f.path).sort()).toEqual(breadth.included.map(f => f.path).sort());
+  });
+});
+
+describe('fitToBudget upgradeReserve', () => {
+  // pytest-dev__pytest-5227 in the benchmark: the gold file ranked 1st but arrived at 10.8% of its
+  // content. Admission filled the whole budget with cheap representations of ~80 files, so depth
+  // upgrading had no headroom to spend. Keeping a fraction back for upgrades gives the top files room.
+  const py = (p: string, content: string, score: number) => ({ ...makeRanked(p, content, score), language: 'python' });
+  const mk = () => [
+    py('res/top.py', 'def f(x):\n    return x + 1  # body\n'.repeat(300), 0.9),
+    ...Array.from({ length: 60 }, (_, i) =>
+      py(`res/small${i}.py`, `def g${i}(y):\n    return y * 2  # body\n`.repeat(20), 0.5 - i * 0.005)),
+  ];
+  const at = (n: number) => ({ maxTokens: n, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget: n });
+  const opts = (upgradeReserve?: number) => ({ pinned: [], compress: 'partial' as const, upgradeOrder: 'depth' as const, upgradeReserve });
+
+  it('without a reserve the top file stays compressed when admission fills the budget', async () => {
+    const { included } = await fitToBudget(mk(), opts(), at(7_000));
+    expect(included.find(f => f.path === 'res/top.py')?.compressionLevel).not.toBe('none');
+  });
+
+  it('with a reserve the top file is upgraded to full content', async () => {
+    const { included } = await fitToBudget(mk(), opts(0.5), at(7_000));
+    expect(included.find(f => f.path === 'res/top.py')?.compressionLevel).toBe('none');
+  });
+
+  it('stays within the budget', async () => {
+    const { included } = await fitToBudget(mk(), opts(0.5), at(7_000));
+    expect(included.reduce((s, f) => s + f.accurateTokens, 0)).toBeLessThanOrEqual(7_000);
+  });
+
+  // The reserve exists to upgrade the top files, so it must never keep the top file out: on a
+  // tiny budget a lone relevant file that fits only just was dropped entirely.
+  it('still admits the top-ranked file when it needs more than the admission share', async () => {
+    // Find the smallest budget at which the lone file fits at all, then hold it to that budget
+    // with a reserve in force.
+    let tight = 0;
+    for (let n = 50; n <= 6_000 && !tight; n += 50) {
+      const { included } = await fitToBudget(mk().slice(0, 1), opts(), at(n));
+      if (included.length) tight = n;
+    }
+    expect(tight).toBeGreaterThan(0);
+    const { included } = await fitToBudget(mk().slice(0, 1), opts(0.5), at(tight));
+    expect(included.map(f => f.path)).toEqual(['res/top.py']);
+  });
+
+  it('raising the budget only adds files, never drops one', async () => {
+    let prev = new Set<string>();
+    for (const n of [3_000, 4_000, 6_000, 8_000, 12_000, 20_000]) {
+      const { included } = await fitToBudget(mk(), opts(0.5), at(n));
+      const now = new Set(included.map(f => f.path));
+      for (const p of prev) expect(now.has(p)).toBe(true);
+      prev = now;
+    }
+  });
+});
+
 describe('budgetFitter cascade', () => {
   it('compressionLevel is "none" when file fits whole', async () => {
     const content = 'const x = 1;';

@@ -22,6 +22,18 @@ interface FitOptions {
   llmBudgetTokens?: number;
   securityMode?: SecurityMode;  // if 'redact', secrets are scrubbed before LLM call
   concurrency?: number;
+  /** How leftover budget upgrades included files. 'breadth' (default) raises every file one
+   *  step per pass, spreading fidelity evenly. 'depth' upgrades each file as far as it will go,
+   *  in rank order, so the highest-ranked files arrive whole — right when the ranking reflects a
+   *  query, where the top files are the ones the task needs. Neither changes which files are
+   *  included. */
+  upgradeOrder?: 'breadth' | 'depth';
+  /** Fraction of the budget held back from admission, for 'depth' upgrades. Admission fills
+   *  the budget with every file's cheapest representation, so without a reserve the top-ranked
+   *  files have no headroom to be upgraded into (measured: the gold file ranked 1st at 10.8% of
+   *  its content). Admission stops at `(1 - reserve) * budget`, a cut that depends only on rank
+   *  and budget, so a larger budget still includes a superset of files. Ignored for 'breadth'. */
+  upgradeReserve?: number;
 }
 
 /** Minimum remaining budget (tokens) below which we stop fitting more files.
@@ -44,6 +56,10 @@ export async function fitToBudget(
   const pinnedSet = new Set(options.pinned);
   const processedPaths = new Set<string>();
 
+  const reserve = options.upgradeOrder === 'depth' ? Math.min(Math.max(options.upgradeReserve ?? 0, 0), 0.9) : 0;
+  // The reserve is held back from every file but the first: it exists to upgrade the top files,
+  // so it must never keep the top file itself out.
+  const holdBack = Math.floor(budget.effectiveBudget * reserve);
   let remaining = budget.effectiveBudget;
 
   // Pinned files first, then ranked order
@@ -125,7 +141,7 @@ export async function fitToBudget(
     const isPinned = pinnedSet.has(file.path);
 
     // Early exit: remaining budget too small to be useful.
-    if (remaining < MIN_USEFUL_REMAINING_TOKENS && budget.effectiveBudget >= MIN_USEFUL_REMAINING_TOKENS && !isPinned) break;
+    if (remaining - (rankPosition === 0 ? 0 : holdBack) < MIN_USEFUL_REMAINING_TOKENS && budget.effectiveBudget >= MIN_USEFUL_REMAINING_TOKENS && !isPinned) break;
     processedPaths.add(file.path);
 
     rankPosition++;
@@ -148,7 +164,7 @@ export async function fitToBudget(
 
     // Tier 3 costs real API spend, so it is never computed speculatively — only for a file
     // that will not fit even at its cheapest local representation.
-    if (reprs[cheapestIndex(reprs)].tokens > remaining
+    if (reprs[cheapestIndex(reprs)].tokens > remaining - (rankPosition === 1 ? 0 : holdBack)
         && levelIndex(ceiling) >= levelIndex('tier3-llm') && options.llmProvider) {
       const base = reprs.find(r => r.level === 'tier2-structural') ?? reprs[0];
       // Pre-redact secrets before sending to LLM and before caching the hash.
@@ -179,7 +195,7 @@ export async function fitToBudget(
     }
 
     const startIndex = cheapestIndex(reprs);
-    if (reprs[startIndex].tokens <= remaining) {
+    if (reprs[startIndex].tokens <= remaining - (isPinned || rankPosition === 1 ? 0 : holdBack)) {
       selected.push({ file, reprs, reprIndex: startIndex, rankPosition });
       remaining -= reprs[startIndex].tokens;
     } else if (isPinned) {
@@ -244,6 +260,21 @@ export async function fitToBudget(
   // measures upgrades in accurate tokens, so an upgrade can never push the total over budget
   // and evict a file that the smaller budget had comfortably included.
   let headroom = budget.effectiveBudget - accurateTotal;
+  if (options.upgradeOrder === 'depth') {
+    // Jump straight to the richest representation that fits. Stepping one level at a time would
+    // stop at the first step that does not fit, even when a richer one costs less (tier3 can
+    // be cheaper than tier2).
+    for (const entry of selected) {
+      for (let next = 0; next < entry.reprIndex; next++) {
+        const delta = accurateFor(entry, next) - accurateFor(entry, entry.reprIndex);
+        if (delta <= headroom) {
+          headroom -= delta;
+          entry.reprIndex = next;
+          break;
+        }
+      }
+    }
+  }
   for (let changed = true; changed;) {
     changed = false;
     for (const entry of selected) {

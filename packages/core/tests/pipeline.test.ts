@@ -44,6 +44,52 @@ describe('runPipeline', () => {
   });
 });
 
+describe('runPipeline with a query', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-pipeline-query-'));
+    // 40 small files unrelated to the query, then one large file that is the only match.
+    for (let i = 0; i < 40; i++) {
+      fs.writeFileSync(path.join(tmpDir, `util${i}.py`), `def helper_${i}(x):\n    return x\n`.repeat(20));
+    }
+    fs.writeFileSync(
+      path.join(tmpDir, 'rewrite.py'),
+      'def rewrite_assertion(node):\n    """docstring handling for the assertion rewriter"""\n    return node\n'.repeat(120),
+    );
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // Regression: pass 2 used to divide the query score by file size, so a large file the
+  // query ranked first fell below every small unrelated file and missed the candidate cut.
+  it('includes a large file the query matches over small unrelated files', async () => {
+    const cfg: RepoCodeConfig = {
+      ...testConfig,
+      root: tmpDir,
+      query: 'assertion rewriter docstring',
+      budget: { maxTokens: 6000, reserveForResponse: 0, reserveForPrompt: 0 },
+      graphDepth: 0,
+    };
+    const result = await runPipeline(cfg);
+    expect(result.included.map(f => f.path)).toContain('rewrite.py');
+  });
+
+  // pytest-dev__pytest-5227: the file the query ranked first arrived at 10.8% of its content,
+  // because admission spent the whole budget on cheap representations of ~80 other files.
+  it('delivers the top-ranked file whole rather than as a fragment', async () => {
+    const cfg: RepoCodeConfig = {
+      ...testConfig,
+      root: tmpDir,
+      query: 'assertion rewriter docstring',
+      budget: { maxTokens: 6000, reserveForResponse: 0, reserveForPrompt: 0 },
+      graphDepth: 0,
+    };
+    const result = await runPipeline(cfg);
+    expect(result.included.find(f => f.path === 'rewrite.py')?.compressionLevel).toBe('none');
+  });
+});
+
 describe('runPipeline caching', () => {
   let tmpDir: string;
   beforeEach(() => {
