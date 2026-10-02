@@ -48,6 +48,22 @@ describe('--remote mutual exclusion', () => {
   });
 });
 
+describe('--query-file validation', () => {
+  it('rejects --query combined with --query-file with a clean error', () => {
+    const result = spawnSync(process.execPath, [cliEntry, '--query', 'a', '--query-file', 'x.md', '--dry-run'], { encoding: 'utf-8' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('[repocode] error: --query and --query-file cannot be combined');
+    expect(result.stderr).not.toContain('    at ');
+  });
+
+  it('reports a missing --query-file without a stack trace', () => {
+    const result = spawnSync(process.execPath, [cliEntry, '--query-file', 'definitely-missing-issue.md', '--dry-run'], { encoding: 'utf-8' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('[repocode] error: cannot read --query-file');
+    expect(result.stderr).not.toContain('    at ');
+  });
+});
+
 describe('--stdin mutual exclusion', () => {
   it('rejects --stdin combined with --include', () => {
     const result = spawnSync(process.execPath, [cliEntry, '--stdin', '--include', '*.ts'], {
@@ -109,6 +125,22 @@ describe('buildPackConfig', () => {
     const { buildPackConfig } = await import('../src/commands/buildConfig.js');
     const config = await buildPackConfig('.', { query: 'authentication flow' });
     expect(config.query).toBe('authentication flow');
+  });
+
+  it('maps --query-file contents to config.query', async () => {
+    // A full issue is too long for a command-line argument on Windows (~32k chars).
+    const fs = await import('fs');
+    const os = await import('os');
+    const file = join(fs.mkdtempSync(join(os.tmpdir(), 'rc-qf-')), 'issue.md');
+    fs.writeFileSync(file, 'Rewrite fails\n\nTraceback in src/_pytest/assertion/rewrite.py\n');
+    const { buildPackConfig } = await import('../src/commands/buildConfig.js');
+    const config = await buildPackConfig('.', { queryFile: file });
+    expect(config.query).toBe('Rewrite fails\n\nTraceback in src/_pytest/assertion/rewrite.py\n');
+  });
+
+  it('rejects --query combined with --query-file', async () => {
+    const { buildPackConfig } = await import('../src/commands/buildConfig.js');
+    await expect(buildPackConfig('.', { query: 'a', queryFile: 'b.md' })).rejects.toThrow('--query and --query-file');
   });
 
   it('maps --instruction to config.instruction.name', async () => {

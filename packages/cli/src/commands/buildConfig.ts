@@ -1,5 +1,6 @@
 import { loadConfig, loadRepomixConfig, budgetForModel, knownModelNames, MODEL_TABLE_VERIFIED_ON } from '@repocode/core';
 import type { RepoCodeConfig, OutputFormat, SecurityMode, GitMode, GitConfig, LLMProviderName } from '@repocode/core';
+import fs from 'fs';
 import path from 'path';
 
 export interface CLIOptions {
@@ -38,6 +39,7 @@ export interface CLIOptions {
   listPresets?: boolean;
   savePreset?: string;
   query?: string;
+  queryFile?: string;
   queryMode?: string;
   instructionFile?: string;
   instructionText?: string;
@@ -165,7 +167,14 @@ export async function buildPackConfig(
   } as Partial<RepoCodeConfig>;
 
   // Query
+  if (opts.query !== undefined && opts.queryFile !== undefined) {
+    throw new Error('--query and --query-file cannot be combined; pass the query one way');
+  }
   if (opts.query !== undefined) (overrides as Record<string, unknown>)['query'] = opts.query;
+  // A whole issue or stack trace is the best query there is, and too long for an argument.
+  if (opts.queryFile !== undefined) {
+    (overrides as Record<string, unknown>)['query'] = fs.readFileSync(path.resolve(opts.queryFile), 'utf-8');
+  }
   if (opts.queryMode !== undefined) {
     (overrides as Record<string, unknown>)['queryConfig'] = {
       ...((overrides as Record<string, unknown>)['queryConfig'] as object ?? {}),

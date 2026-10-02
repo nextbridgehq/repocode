@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command, Option } from 'commander';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { packCommand } from './commands/pack.js';
@@ -71,6 +71,7 @@ program
   .addOption(advanced('--graph-depth <n>', 'Import graph depth for transitive tracing and centrality scoring (default: 2; set to 0 to disable)'))
   .addOption(advanced('--max-candidates <n>', 'Cap how many ranked files are considered for packing. Fewer candidates means more budget per file, so each is included at higher fidelity; more candidates means broader but shallower coverage'))
   .addOption(advanced('--query-mode <mode>', 'Query mode: keyword|semantic (default: keyword)'))
+  .addOption(advanced('--query-file <path>', 'Read the query from a file — e.g. a whole issue or stack trace, too long for --query'))
   .addOption(advanced('--instruction <name>', 'Use a named instruction from the library'))
   .addOption(advanced('--instruction-file <path>', 'Include instruction text from this file'))
   .addOption(advanced('--instruction-text <text>', 'Use literal text as the instruction'))
@@ -144,6 +145,16 @@ program
       }
       if (opts.watch) {
         process.stderr.write('[repocode] error: --remote cannot be combined with --watch — there is nothing to watch in a one-time snapshot.\n');
+        process.exit(1);
+      }
+    }
+    if (opts.queryFile !== undefined) {
+      if (opts.query !== undefined) {
+        process.stderr.write('[repocode] error: --query and --query-file cannot be combined; pass the query one way\n');
+        process.exit(1);
+      }
+      if (!existsSync(opts.queryFile) || !statSync(opts.queryFile).isFile()) {
+        process.stderr.write(`[repocode] error: cannot read --query-file ${opts.queryFile}\n`);
         process.exit(1);
       }
     }

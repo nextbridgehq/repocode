@@ -284,6 +284,8 @@ File selection
   --list-presets                     List available presets and exit
   --save-preset <name>               Save current CLI flags as a named preset and exit
   --query-mode <mode>                Query mode: keyword|semantic (default: keyword)
+  --query-file <path>                Read the query from a file — e.g. a whole issue or stack
+                                     trace, too long for --query
   --graph-depth <n>                  Import graph depth for transitive tracing and centrality
                                      scoring (default: 2; set to 0 to disable)
   --stdin                            Read a newline-separated file list from stdin instead of
