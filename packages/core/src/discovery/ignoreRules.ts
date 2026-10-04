@@ -199,6 +199,47 @@ export function resolveIgnorePatterns(root: string, config: IgnoreConfig): strin
   return patterns;
 }
 
+/**
+ * Directories the ignore rules (.gitignore, .repocodeignore, custom patterns) exclude, found by
+ * walking the tree and never descending into a match. The walk-level prune only knows
+ * DEFAULT_PATTERNS, so a directory ignored by .gitignore alone (venv/, target/, a generated
+ * tree) was crawled file by file by globby and then filtered out in memory. Each result is
+ * a relative path the caller turns into an anchored `<dir>/**` ignore pattern.
+ *
+ * Returns nothing when any pattern is a negation: globby cannot honour `!keep/`, so pruning a
+ * directory a later pattern re-includes would silently drop its files. Hidden directories are
+ * skipped, as globby skips them (`dot: false`).
+ */
+export function findIgnoredDirs(root: string, config: IgnoreConfig): string[] {
+  const patterns = resolveIgnorePatterns(root, config);
+  if (patterns.some(p => p.startsWith('!'))) return [];
+
+  const ig = Ignore();
+  ig.add(patterns);
+  const found: string[] = [];
+
+  function walk(absDir: string, relDir: string): void {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name.startsWith('.')) continue;
+      const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
+      if (ig.ignores(`${rel}/`)) {
+        found.push(rel);
+        continue;
+      }
+      walk(path.join(absDir, entry.name), rel);
+    }
+  }
+
+  walk(root, '');
+  return found;
+}
+
 export async function buildIgnoreFilter(
   root: string,
   config: IgnoreConfig

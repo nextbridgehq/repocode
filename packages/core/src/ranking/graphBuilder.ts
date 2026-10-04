@@ -4,6 +4,7 @@ import type { IgnoreConfig } from '../types.js';
 import { extractImportsFromFile } from '../git/importTracer.js';
 import {
   buildIgnoreFilter,
+  findIgnoredDirs,
   computeDefaultIncludeRoots,
   globbyMulti,
   withExtensionGlob,
@@ -88,6 +89,7 @@ export async function buildGraph(
 
   const sourceFiles = await globbyMulti(sourcePatterns, {
     cwd: root,
+    ignore: findIgnoredDirs(root, ignore).map(rel => `${rel}/**`),
     onlyFiles: true,
     dot: false,
   });

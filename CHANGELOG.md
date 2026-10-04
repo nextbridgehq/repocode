@@ -22,6 +22,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- File discovery and the import-graph pass crawled every file inside directories that only `.gitignore` excludes (`venv/`, `target/`, generated trees) before filtering them out one by one. They are now pruned from the walk, about 4x faster on a repository with 40,000 files in an ignored directory. Pruning is skipped when any ignore pattern is a negation, since the walk cannot honour `!keep/`.
 - `--query` had almost no effect on what was packed. Pass-2 ranking divided the query-reranked score by file size, so any file larger than a few hundred tokens fell below empty `__init__.py` files regardless of how well it matched. With a query, pass 2 now blends the query score with import centrality only.
 - Python import resolution missed most real-world imports: packages kept under `src/` or `lib/`, packages imported via `__init__.py`, `from package import submodule`, parenthesised multi-line imports, `from . import sibling`, and comma-separated `import a, b`. On pytest only 11 of 235 files resolved. The file-cache version is bumped so stale resolutions are discarded.
 

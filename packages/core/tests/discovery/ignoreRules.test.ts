@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildIgnoreFilter, resolveIgnorePatterns } from '../../src/discovery/ignoreRules.js';
+import { buildIgnoreFilter, resolveIgnorePatterns, findIgnoredDirs } from '../../src/discovery/ignoreRules.js';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -63,5 +63,43 @@ describe('ignoreRules — Repomix interop', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('findIgnoredDirs', () => {
+  const cfg = { useGitignore: true, useDefaultPatterns: true, customPatterns: [] as string[] };
+  const mk = (gitignore: string, dirs: string[]) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-ignored-'));
+    for (const d of dirs) fs.mkdirSync(path.join(root, d), { recursive: true });
+    fs.writeFileSync(path.join(root, '.gitignore'), gitignore);
+    return root;
+  };
+
+  // Discovery prunes its walk only with the default list, so a directory ignored by .gitignore
+  // alone (venv/, target/, a generated tree) was crawled file by file and then filtered out.
+  it('returns directories the .gitignore ignores, at any depth', () => {
+    const root = mk('venv/\n/target\ndocs/generated/\n', ['venv', 'target', 'docs/generated', 'docs/guide', 'src']);
+    expect(findIgnoredDirs(root, cfg).sort()).toEqual(['docs/generated', 'target', 'venv']);
+    fs.rmSync(root, { recursive: true });
+  });
+
+  it('does not descend into an ignored directory', () => {
+    const root = mk('venv/\n', ['venv/lib/deep', 'src']);
+    expect(findIgnoredDirs(root, cfg)).toEqual(['venv']);
+    fs.rmSync(root, { recursive: true });
+  });
+
+  it('ignores patterns that match files, not directories', () => {
+    const root = mk('*.log\n', ['logs', 'src']);
+    expect(findIgnoredDirs(root, cfg)).toEqual([]);
+    fs.rmSync(root, { recursive: true });
+  });
+
+  // globby cannot honour negation, so pruning a directory a later `!` pattern re-includes would
+  // silently drop files. With any negation present, prune nothing from the .gitignore.
+  it('returns nothing when a negation pattern is present', () => {
+    const root = mk('build_out/\n!build_out/keep/\n', ['build_out/keep', 'src']);
+    expect(findIgnoredDirs(root, cfg)).toEqual([]);
+    fs.rmSync(root, { recursive: true });
   });
 });

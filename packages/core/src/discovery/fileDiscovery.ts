@@ -6,6 +6,7 @@ import {
   buildIgnoreFilter,
   computeDefaultIncludeRoots,
   findAlwaysPrunedDirs,
+  findIgnoredDirs,
   globbyMulti,
   DEFAULT_PATTERNS,
 } from './ignoreRules.js';
@@ -57,9 +58,14 @@ export async function discoverFiles(
     ? findAlwaysPrunedDirs(root).map(rel => `${rel}/**`)
     : [];
 
+  // Directories .gitignore and friends exclude: prune them from the walk too, rather than
+  // crawling every file in them just to filter each one out below.
+  const ignoredDirPatterns = findIgnoredDirs(root, ignore).map(rel => `${rel}/**`);
+
   const globbyIgnorePatterns = [
     ...(ignore.useDefaultPatterns ? DEFAULT_PATTERNS : []),
     ...nestedPrunePatterns,
+    ...ignoredDirPatterns,
     ...exclude,
   ];
 
