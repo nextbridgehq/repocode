@@ -149,6 +149,9 @@ importers:
       tiktoken:
         specifier: ^1.0.15
         version: 1.0.22
+      web-tree-sitter:
+        specifier: 0.27.0
+        version: 0.27.0
     devDependencies:
       '@types/node':
         specifier: ^26.0.0
@@ -1730,6 +1733,9 @@ packages:
   web-tree-sitter@0.26.13:
     resolution: {integrity: sha512-5bUZ7vbQ1kcondet96wzP974+JfCZDeQ7bTpacICm2nnvHpa5cO0ByRsoMcAhUP+743vpkb4m0BFlVSm+Ye9VA==}
 
+  web-tree-sitter@0.27.0:
+    resolution: {integrity: sha512-XK08gj6RwTMQatAG7uVRP8MunqotL/XC19vHgkSPKmELgbGPBj4ECvB8haHOUnyj6ls2B8t42UTro14zxGgAHg==}
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -3279,6 +3285,8 @@ snapshots:
       - msw
 
   web-tree-sitter@0.26.13: {}
+
+  web-tree-sitter@0.27.0: {}
 
   which@2.0.2:
     dependencies:

@@ -38,6 +38,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "grammars",
     "README.md"
   ],
   "engines": {
@@ -63,7 +64,8 @@
     "ignore": "^5.3.0",
     "istextorbinary": "^9.0.0",
     "proper-lockfile": "4.1.2",
-    "tiktoken": "^1.0.15"
+    "tiktoken": "^1.0.15",
+    "web-tree-sitter": "0.27.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
