@@ -45,6 +45,23 @@ function collect(node: Node, parent: string | null, out: CodeSymbol[], inClass: 
     case 'function_definition': // python
       if (name) out.push(make(node, name, inClass ? 'method' : 'function', parent, body, false));
       return;
+    case 'function_item': // rust
+      if (name) out.push(make(node, name, inClass ? 'method' : 'function', parent, body, true));
+      return;
+    case 'struct_item': // rust
+    case 'enum_item':
+      if (name) out.push(make(node, name, 'class', parent, body, true));
+      return;
+    case 'trait_item': // rust
+      if (!name) return;
+      out.push(make(node, name, 'interface', parent, body, true));
+      for (const c of body?.namedChildren ?? []) collect(c, name, out, true);
+      return;
+    case 'impl_item': { // rust: not a symbol itself; its functions belong to the implemented type
+      const type = def.childForFieldName('type')?.text.replace(/<.*$/s, '').trim();
+      for (const c of body?.namedChildren ?? []) collect(c, type ?? null, out, true);
+      return;
+    }
     case 'class_definition': // python
       if (!name) return;
       out.push(make(node, name, 'class', parent, body, false));
@@ -57,8 +74,9 @@ function collect(node: Node, parent: string | null, out: CodeSymbol[], inClass: 
     case 'method_definition': // ts, js
       if (name) out.push(make(node, name, 'method', parent, body, true));
       return;
-    case 'method_declaration': // go
-      if (name) out.push(make(node, name, 'method', receiverType(def), body, true));
+    case 'method_declaration': // go (receiver) and java (inside a class)
+    case 'constructor_declaration': // java
+      if (name) out.push(make(node, name, 'method', def.childForFieldName('receiver') ? receiverType(def) : parent, body, true));
       return;
     case 'class_declaration':
     case 'abstract_class_declaration':
@@ -67,7 +85,9 @@ function collect(node: Node, parent: string | null, out: CodeSymbol[], inClass: 
       for (const c of body?.namedChildren ?? []) collect(c, name, out, true);
       return;
     case 'interface_declaration':
-      if (name) out.push(make(node, name, 'interface', parent, body, true));
+      if (!name) return;
+      out.push(make(node, name, 'interface', parent, body, true));
+      for (const c of body?.namedChildren ?? []) collect(c, name, out, true);
       return;
     case 'public_field_definition': { // class field holding an arrow function
       const value = def.childForFieldName('value');

@@ -5,7 +5,7 @@ import type { Tree } from 'web-tree-sitter';
 /** Grammars shipped in `grammars/`, picked by file extension. The `typescript` language name used
  *  elsewhere covers .ts, .tsx and .jsx, which need different grammars. */
 const GRAMMAR_BY_EXT: Record<string, string> = {
-  py: 'python', go: 'go',
+  py: 'python', go: 'go', rs: 'rust', java: 'java',
   ts: 'typescript', mts: 'typescript', cts: 'typescript',
   tsx: 'tsx',
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',

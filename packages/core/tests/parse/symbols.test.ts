@@ -90,9 +90,64 @@ describe('extractSymbols', () => {
     ]);
   });
 
+  it('finds rust functions, structs, traits and impl methods (parent = the impl type)', async () => {
+    const src = [
+      'use std::fmt;',                    // 1
+      '',                                 // 2
+      'struct S {',                       // 3
+      '    n: i32,',                      // 4
+      '}',                                // 5
+      '',                                 // 6
+      'impl S {',                         // 7
+      '    fn get(&self) -> i32 {',       // 8
+      '        self.n',                   // 9
+      '    }',                            // 10
+      '}',                                // 11
+      '',                                 // 12
+      'fn free() -> i32 {',               // 13
+      '    1',                            // 14
+      '}',                                // 15
+      '',                                 // 16
+      'trait T {',                        // 17
+      '    fn dflt(&self) -> i32 {',      // 18
+      '        2',                        // 19
+      '    }',                            // 20
+      '}',                                // 21
+    ].join('\n');
+    expect(brief(await extractSymbols(src, 'a.rs'))).toEqual([
+      'class:S@3-5/4',
+      'method:S.get@8-10/9',
+      'function:free@13-15/14',
+      'interface:T@17-21/18',
+      'method:T.dflt@18-20/19',
+    ]);
+  });
+
+  it('finds java classes, constructors, methods and interfaces', async () => {
+    const src = [
+      'package p;',                       // 1
+      'public class Foo {',               // 2
+      '    public Foo() {',               // 3
+      '    }',                            // 4
+      '    @Override',                    // 5
+      '    public int get() {',           // 6
+      '        return 1;',                // 7
+      '    }',                            // 8
+      '}',                                // 9
+      'interface I { void m(); }',        // 10
+    ].join('\n');
+    expect(brief(await extractSymbols(src, 'Foo.java'))).toEqual([
+      'class:Foo@2-9/3',
+      'method:Foo.Foo@3-4/4',
+      'method:Foo.get@5-8/7',
+      'interface:I@10-10/10',
+      'method:I.m@10-10/10',
+    ]);
+  });
+
   it('returns null for an unsupported file type', async () => {
     expect(await extractSymbols('# hi', 'README.md')).toBeNull();
-    expect(await extractSymbols('fn main() {}', 'a.rs')).toBeNull();
+    expect(await extractSymbols('puts 1', 'a.rb')).toBeNull();
   });
 
   it('still finds the well-formed symbols around a syntax error', async () => {
