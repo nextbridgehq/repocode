@@ -291,8 +291,9 @@ export async function fitToBudget(
     // Jump straight to the richest representation that fits. Stepping one level at a time would
     // stop at the first step that does not fit, even when a richer one costs less (tier3 can
     // be cheaper than tier2).
-    const deepen = (entry: Selection) => {
+    const deepen = (entry: Selection, allowFocus: boolean) => {
       for (let next = 0; next < entry.reprIndex; next++) {
+        if (!allowFocus && entry.reprs[next].level === 'focus') continue;
         const delta = accurateFor(entry, next) - accurateFor(entry, entry.reprIndex);
         if (delta <= headroom) {
           headroom -= delta;
@@ -301,14 +302,15 @@ export async function fitToBudget(
         }
       }
     };
-    // The top file goes as deep as it can first: it is the one the query ranked as the answer.
-    // Below it, every file gets its smallest focus step before any file takes a bigger one. Taking
-    // each file to its richest step in rank order let one large focus drain the leftover and left
-    // the file ranked just below it a bare skeleton (matplotlib-25332: gold file at 9% while the
-    // file above it took 9k tokens of extra bodies).
-    for (const entry of selected) if (entry.rankPosition === 1) deepen(entry);
+    // 1. Everything that exists without focus, in rank order: exactly what a run without focus
+    //    delivers. Focus must only spend what this leaves — benchmark: six instances lost a whole
+    //    gold file because focus steps for the file above it were taken first.
+    for (const entry of selected) deepen(entry, false);
+    // 2. Every file gets its smallest focus step before any file takes a bigger one. Taking each
+    //    file to its richest step in rank order let one large focus drain the leftover and left the
+    //    file ranked just below it a bare skeleton (matplotlib-25332: gold file at 9% while the
+    //    file above it took 9k tokens of extra bodies).
     for (const entry of selected) {
-      if (entry.rankPosition === 1) continue;
       const floor = entry.reprs.map(r => r.level).lastIndexOf('focus');
       if (floor < 0 || entry.reprIndex <= floor) continue;
       const delta = accurateFor(entry, floor) - accurateFor(entry, entry.reprIndex);
@@ -317,7 +319,8 @@ export async function fitToBudget(
         entry.reprIndex = floor;
       }
     }
-    for (const entry of selected) deepen(entry);
+    // 3. Bigger focus steps, in rank order.
+    for (const entry of selected) deepen(entry, true);
   }
   for (let changed = true; changed;) {
     changed = false;

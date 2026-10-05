@@ -648,3 +648,32 @@ describe('fitToBudget focus fairness', () => {
     expect(included.map(f => f.compressionLevel).slice(1)).toEqual(['focus', 'focus']);
   });
 });
+
+describe('fitToBudget focus never costs a file its whole-file upgrade', () => {
+  // Without a focus option the leftover budget makes the medium file whole. Focus steps for the
+  // large file above it must only spend what that leaves (benchmark: sklearn-10508 and five more
+  // instances lost a whole gold file to focus steps taken for the file ranked above it).
+  it('upgrades a medium file whole before spending leftover on a large file focus', async () => {
+    const large = Array.from({ length: 30 }, (_, i) => `export function filler${i}(x: number) {\n  const a = x + ${i};\n  return a * ${i};\n}`)
+      .concat(Array.from({ length: 8 }, (_, k) => [
+        `export function target_${k}(x: number) {`,
+        ...Array.from({ length: 30 }, (_, j) => `  const step${j} = compute_${k}_${j}(x) + ${j};`),
+        '  return x;',
+        '}',
+      ].join('\n'))).join('\n');
+    const medium = Array.from({ length: 25 }, (_, i) => `export function mid${i}(x: number) {\n  const a = x + ${i};\n  const b = a * ${i};\n  return b - a;\n}`).join('\n');
+    const top = 'export const small = 1;';
+    const t2 = (c: string) => estimateFast(compressTier2(compressTier1(c, 'typescript'), 'typescript'));
+    const floor = estimateFast((await buildFocus(large, 'a.ts', 'target'))![0]);
+    const slack = 300;
+    expect(floor - t2(large)).toBeGreaterThan(slack + 100); // otherwise the scenario proves nothing
+
+    const effectiveBudget = estimateFast(top) + t2(large) + estimateFast(medium) + slack;
+    const { included } = await fitToBudget(
+      [makeRanked('src/wTop.ts', top, 0.95), makeRanked('src/wLarge.ts', large, 0.9), makeRanked('src/wMedium.ts', medium, 0.8)],
+      { pinned: [], compress: 'partial', upgradeOrder: 'depth', focusQuery: 'target' },
+      { maxTokens: effectiveBudget, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget },
+    );
+    expect(included.find(f => f.path === 'src/wMedium.ts')?.compressionLevel).toBe('none');
+  });
+});
