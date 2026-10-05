@@ -4,6 +4,7 @@ import { getCompressionTier } from '../types.js';
 import { estimateFast } from '../tokens/fastEstimator.js';
 import { estimateAccurateBatch } from '../tokens/accurateEstimator.js';
 import { compressTier1, compressTier2 } from './compression.js';
+import { buildFocus } from './focus.js';
 import { extractPartial } from './partialExtractor.js';
 import type { FileCache } from '../cache/fileCache.js';
 import type { LLMProvider } from '../compression/providers/types.js';
@@ -34,6 +35,11 @@ interface FitOptions {
    *  its content). Admission stops at `(1 - reserve) * budget`, a cut that depends only on rank
    *  and budget, so a larger budget still includes a superset of files. Ignored for 'breadth'. */
   upgradeReserve?: number;
+  /** The task query. When set, large files near the top of the ranking also get 'focus'
+   *  representations: signatures plus the bodies of the symbols the query is about. They sit between
+   *  the whole file and the signature-only skeleton, so only the upgrade step uses them and the set
+   *  of included files is unchanged. */
+  focusQuery?: string;
 }
 
 /** Minimum remaining budget (tokens) below which we stop fitting more files.
@@ -41,7 +47,15 @@ interface FitOptions {
  *  tiny budgets are unaffected. Pinned files are always processed. */
 const MIN_USEFUL_REMAINING_TOKENS = 200;
 
-const LEVEL_ORDER: CompressionLevel[] = ['none', 'tier1-regex', 'tier2-structural', 'tier3-llm', 'partial'];
+const LEVEL_ORDER: CompressionLevel[] = ['none', 'tier1-regex', 'focus', 'tier2-structural', 'tier3-llm', 'partial'];
+
+/** Only the files at the top of the ranking are worth parsing, and only when whole they are costly. */
+const FOCUS_TOP_K = 30;
+const FOCUS_MIN_TOKENS = 1500;
+
+/** Richest first; within a level (several focus steps) the larger one first. */
+const byFidelity = (a: { level: CompressionLevel; tokens: number }, b: { level: CompressionLevel; tokens: number }) =>
+  levelIndex(a.level) - levelIndex(b.level) || b.tokens - a.tokens;
 
 function levelIndex(level: CompressionLevel): number {
   return LEVEL_ORDER.indexOf(level);
@@ -112,7 +126,7 @@ export async function fitToBudget(
       }
     }
 
-    return reprs.sort((a, b) => levelIndex(a.level) - levelIndex(b.level));
+    return reprs.sort(byFidelity);
   }
 
   /** Index of the cheapest representation. Ties resolve to the richest, since `reprs` runs
@@ -161,6 +175,19 @@ export async function fitToBudget(
     // Pinned files always use the full ceiling regardless of options.compress
     const ceiling = isPinned ? 'partial' : getCompressionTier(rankPosition, options.compress);
     const reprs = buildReprs(content, file, ceiling);
+
+    // Focus only drops bodies, so it needs a ceiling that already allows skeletons.
+    if (options.focusQuery && rankPosition <= FOCUS_TOP_K && levelIndex(ceiling) >= levelIndex('tier2-structural')) {
+      const whole = reprs.find(r => r.level === 'none')!;
+      if (whole.tokens > FOCUS_MIN_TOKENS) {
+        const tier2 = reprs.find(r => r.level === 'tier2-structural');
+        for (const text of (await buildFocus(content, file.path, options.focusQuery)) ?? []) {
+          const tokens = estimateFast(text);
+          if (tokens < whole.tokens && (!tier2 || tokens > tier2.tokens)) reprs.push({ level: 'focus', content: text, tokens });
+        }
+        reprs.sort(byFidelity);
+      }
+    }
 
     // Tier 3 costs real API spend, so it is never computed speculatively — only for a file
     // that will not fit even at its cheapest local representation.

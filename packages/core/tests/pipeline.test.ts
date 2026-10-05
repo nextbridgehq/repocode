@@ -90,6 +90,42 @@ describe('runPipeline with a query', () => {
   });
 });
 
+describe('runPipeline focus on a large file', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-pipeline-focus-'));
+    // One module too big for the budget whole, with a single function the query names.
+    const fns = Array.from({ length: 60 }, (_, i) =>
+      `def step_${i}(x):\n    first = load_${i}(x)\n    second = transform_${i}(first)\n    third = validate_${i}(second)\n    fourth = normalise_${i}(third)\n    fifth = enrich_${i}(fourth)\n    sixth = filter_${i}(fifth)\n    seventh = merge_${i}(sixth, x)\n    eighth = audit_${i}(seventh)\n    return store_${i}(eighth)\n`);
+    fns.splice(30, 0, 'def resolve_redirects(resp):\n    LOCATION_HEADER_MARKER = resp.headers["location"]\n    return LOCATION_HEADER_MARKER\n');
+    fs.writeFileSync(path.join(tmpDir, 'sessions.py'), fns.join('\n'));
+    for (let i = 0; i < 6; i++) fs.writeFileSync(path.join(tmpDir, `util${i}.py`), `def helper_${i}(x):\n    return x\n`.repeat(8));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('delivers the named function of a file that does not fit whole, and omits the rest', async () => {
+    const cfg: RepoCodeConfig = {
+      ...testConfig,
+      root: tmpDir,
+      query: 'resolve_redirects drops the location header',
+      budget: { maxTokens: 4000, reserveForResponse: 0, reserveForPrompt: 0 },
+      graphDepth: 0,
+    };
+    const file = (await runPipeline(cfg)).included.find(f => f.path === 'sessions.py');
+    expect(file?.compressionLevel).toBe('focus');
+    expect(file?.content).toContain('LOCATION_HEADER_MARKER = resp.headers');
+    expect(file?.content).not.toContain("load_3(x)");
+  });
+
+  it('does not use focus without a query', async () => {
+    const cfg: RepoCodeConfig = { ...testConfig, root: tmpDir, budget: { maxTokens: 3500, reserveForResponse: 0, reserveForPrompt: 0 }, graphDepth: 0 };
+    const levels = (await runPipeline(cfg)).included.map(f => f.compressionLevel);
+    expect(levels).not.toContain('focus');
+  });
+});
+
 describe('runPipeline caching', () => {
   let tmpDir: string;
   beforeEach(() => {

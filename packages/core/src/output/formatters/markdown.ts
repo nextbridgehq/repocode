@@ -50,6 +50,8 @@ export function formatMarkdown(ctx: AssembledContext): string {
     } else {
       const banner = file.compressionLevel === 'partial'
         ? '// [PARTIAL — signatures and key sections shown]\n'
+        : file.compressionLevel === 'focus'
+        ? '// [FOCUSED — bodies shown for the query, others omitted]\n'
         : file.compressionLevel === 'tier2-structural'
         ? '// [COMPRESSED — function bodies omitted]\n'
         : '';

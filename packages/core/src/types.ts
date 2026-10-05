@@ -1,6 +1,6 @@
 export type OutputFormat = 'xml' | 'markdown' | 'plain' | 'json';
 export type SecurityMode = 'warn' | 'exclude' | 'redact' | 'fail';
-export type CompressionLevel = 'none' | 'tier1-regex' | 'tier2-structural' | 'tier3-llm' | 'partial';
+export type CompressionLevel = 'none' | 'tier1-regex' | 'focus' | 'tier2-structural' | 'tier3-llm' | 'partial';
 
 export interface SelectiveCompressConfig {
   top10?: CompressionLevel;

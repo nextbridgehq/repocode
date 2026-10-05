@@ -69,6 +69,7 @@ function median(nums: number[]): number {
 const COMPRESS_MULTIPLIER: Record<CompressionLevel, number> = {
   'none':             0.5,
   'tier1-regex':      0.6,
+  'focus':            0.6,
   'tier2-structural': 0.7,
   'tier3-llm':        0.8,
   'partial':          0.8,

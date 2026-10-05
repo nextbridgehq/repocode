@@ -543,3 +543,71 @@ describe('budgetFitter concurrency and error handling', () => {
     readFileSpy.mockRestore();
   });
 });
+
+describe('fitToBudget focusQuery', () => {
+  // A large source file with one function the query is about. Whole, it costs far more than the
+  // budget below; skeleton plus that one body fits.
+  const bigSource = () => {
+    const fns = Array.from({ length: 90 }, (_, i) => [
+      `export function filler${i}(x: number): number {`,
+      `  const a = x + ${i};`,
+      `  const b = a * 2 + ${i};`,
+      `  const c = compute_${i}(a, b);`,
+      '  return c + b + a;',
+      '}',
+    ].join('\n'));
+    fns.splice(45, 0, [
+      'export function targetFn(x: number): number {',
+      '  const TARGET_BODY_MARKER = x * 7919;',
+      '  return TARGET_BODY_MARKER;',
+      '}',
+    ].join('\n'));
+    return fns.join('\n');
+  };
+  const opts = (focusQuery?: string, compress: 'partial' | 'tier1-regex' = 'partial') =>
+    ({ pinned: [], compress, upgradeOrder: 'depth' as const, focusQuery });
+  const budgetFor = (content: string) => {
+    const effectiveBudget = Math.floor(estimateFast(content) * 0.75);
+    return { maxTokens: effectiveBudget, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget };
+  };
+
+  it('delivers the query-relevant body of a file that does not fit whole', async () => {
+    const content = bigSource();
+    const { included } = await fitToBudget([makeRanked('src/focusbig.ts', content, 0.9)], opts('targetFn returns the wrong value'), budgetFor(content));
+    expect(included[0].compressionLevel).toBe('focus');
+    expect(included[0].content).toContain('TARGET_BODY_MARKER = x * 7919');
+    expect(included[0].content).not.toContain('compute_3(a, b)');
+  });
+
+  it('does not use focus without a focusQuery', async () => {
+    const content = bigSource();
+    const { included } = await fitToBudget([makeRanked('src/focusbig.ts', content, 0.9)], opts(undefined), budgetFor(content));
+    expect(included[0].compressionLevel).not.toBe('focus');
+  });
+
+  it('does not use focus when the compression ceiling does not allow dropping bodies', async () => {
+    const content = bigSource();
+    const { included } = await fitToBudget([makeRanked('src/focusbig.ts', content, 0.9)], opts('targetFn', 'tier1-regex'), { maxTokens: 1e6, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget: 1e6 });
+    expect(included.every(f => f.compressionLevel !== 'focus')).toBe(true);
+  });
+
+  it('leaves the set of included files unchanged', async () => {
+    const content = bigSource();
+    const files = () => [
+      makeRanked('src/focusbig.ts', content, 0.9),
+      ...Array.from({ length: 6 }, (_, i) => makeRanked(`src/other${i}.ts`, 'export const v = 1;\n'.repeat(60), 0.5 - i * 0.05)),
+    ];
+    const budget = budgetFor(content);
+    const without = await fitToBudget(files(), opts(undefined), budget);
+    const withFocus = await fitToBudget(files(), opts('targetFn'), budget);
+    expect(withFocus.included.map(f => f.path)).toEqual(without.included.map(f => f.path));
+    expect(withFocus.excluded.map(f => f.path).sort()).toEqual(without.excluded.map(f => f.path).sort());
+  });
+
+  it('never exceeds the budget', async () => {
+    const content = bigSource();
+    const budget = budgetFor(content);
+    const { included } = await fitToBudget([makeRanked('src/focusbig.ts', content, 0.9)], opts('targetFn'), budget);
+    expect(included.reduce((s, f) => s + f.accurateTokens, 0)).toBeLessThanOrEqual(budget.effectiveBudget);
+  });
+});

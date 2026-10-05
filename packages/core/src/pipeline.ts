@@ -325,6 +325,7 @@ export async function runPipeline(
       // With a query the top of the ranking is what the task needs; give it whole files.
       upgradeOrder: config.query ? 'depth' : 'breadth',
       upgradeReserve: config.query ? QUERY_UPGRADE_RESERVE : undefined,
+      focusQuery: config.query,
     },
     budget
   ).finally(() => llmCache?.save());
