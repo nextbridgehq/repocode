@@ -8,11 +8,9 @@ export const FOCUS_BODY_COUNTS = [1, 3, 8];
 /** Weight of a title term (first line of a multi-line query) against a body term; same as `rerank`. */
 const TITLE_WEIGHT = 5;
 
-/** Added to a symbol whose name the query spells out; larger than any BM25 sum, so a named symbol leads. */
-const NAME_BOOST = 1000;
-const MIN_NAME_LENGTH = 4;
-
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** How often a symbol's own name is repeated in the text it is scored on. A query that names a
+ *  function should find it ahead of one that only uses the words in passing. */
+const NAME_REPEATS = 3;
 
 /** A symbol worth showing in full: a function or method, or a class/interface with no members of its
  *  own to show instead. A class that has members stays in the skeleton as its header and attributes. */
@@ -29,16 +27,17 @@ function rankSymbols(candidates: CodeSymbol[], lines: string[], query: string): 
   const queryLines = query.split(/\r?\n/).filter(l => l.trim());
   if (queryLines.length > 1) for (const t of tokenize(queryLines[0])) weight.set(t, TITLE_WEIGHT);
 
+  // The qualified name leads the text, so a query about `Grouper` reaches its methods and one about
+  // `__init__` is told apart by the class it belongs to. Measured over the 274 benchmark instances
+  // (share of patched hunks inside the kept bodies at 1 / 3 / 8 bodies): 43.3 / 66.3 / 84.7 with a
+  // verbatim-name boost, 47.5 / 68.6 / 86.4 with this.
   const index = buildBM25(candidates.map((s, i) => ({
     path: String(i),
-    text: lines.slice(s.startLine - 1, s.endLine).join('\n'),
+    text: (s.parent ? `${s.parent} ` : '') + `${s.name}\n`.repeat(NAME_REPEATS)
+      + lines.slice(s.startLine - 1, s.endLine).join('\n'),
   })));
   return candidates
-    .map((s, i) => {
-      const named = s.name.length >= MIN_NAME_LENGTH
-        && new RegExp(`(?<![\\w])${escape(s.name)}(?![\\w])`).test(query);
-      return { s, score: scoreBM25(terms, index, String(i), weight) + (named ? NAME_BOOST : 0) };
-    })
+    .map((s, i) => ({ s, score: scoreBM25(terms, index, String(i), weight) }))
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score || a.s.startLine - b.s.startLine)
     .map(x => x.s);
