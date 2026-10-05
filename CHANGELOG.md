@@ -13,6 +13,8 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 - `--query-file <path>` reads the query from a file, so a whole issue or stack trace can drive ranking. It is too long for `--query` on Windows.
 
+- With a query, a large file near the top of the ranking that does not fit whole can now arrive as its signatures plus the bodies of the symbols the query is about (1, 3 or 8 of them), with markers such as `# ... [12 lines omitted: L40-L51] ...` that name the omitted line ranges. Symbols are found with tree-sitter (Python, TypeScript/JavaScript, Go, Rust, Java; the grammars ship with the package). The new `focus` level sits between full text and the signature-only skeleton, and it only spends budget that is left after every file has been upgraded as far as it could without it, so the set of included files and every file that was delivered whole before are unchanged. On 274 SWE-bench Lite instances at 50k it raised the share of patches whose changed lines are present in the pack from 66.8% to 68.2% (whole-issue query) and 59.5% to 60.6% (title query), with no instance getting worse and usable recall unchanged.
+
 ### Changed
 
 - Query ranking rewritten. BM25 replaces TF-IDF. The tokenizer splits camelCase and snake_case identifiers, applies light stemming, and drops English filler and language keywords. File-name, definition, import and comment matches are weighted by term rarity and work across languages; they previously recognised only JavaScript/TypeScript syntax. A path or dotted module named in the query ranks that file first. Changelogs are down-weighted. Scores are normalised by saturation against the median match instead of percentiles, so strong evidence keeps its lead.
