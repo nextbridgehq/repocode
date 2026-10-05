@@ -7,6 +7,8 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
 import { estimateFast } from '../../src/tokens/fastEstimator.js';
+import { buildFocus } from '../../src/budget/focus.js';
+import { compressTier1, compressTier2 } from '../../src/budget/compression.js';
 import { ZERO_SIGNALS } from '../helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -609,5 +611,40 @@ describe('fitToBudget focusQuery', () => {
     const budget = budgetFor(content);
     const { included } = await fitToBudget([makeRanked('src/focusbig.ts', content, 0.9)], opts('targetFn'), budget);
     expect(included.reduce((s, f) => s + f.accurateTokens, 0)).toBeLessThanOrEqual(budget.effectiveBudget);
+  });
+});
+
+describe('fitToBudget focus fairness', () => {
+  // Two large files the query matches equally. Spending the leftover on the first file's biggest
+  // focus step used to leave the second with a bare skeleton (matplotlib-25332: the gold file at
+  // rank 3 stayed at 9% while rank 2 took 9k tokens of extra bodies).
+  const source = () => {
+    const filler = Array.from({ length: 30 }, (_, i) => `export function filler${i}(x: number) {\n  const a = x + ${i};\n  return a * ${i};\n}`);
+    const targets = Array.from({ length: 8 }, (_, k) => [
+      `export function target_${k}(x: number) {`,
+      ...Array.from({ length: 30 }, (_, j) => `  const step${j} = compute_${k}_${j}(x) + ${j};`),
+      '  return x;',
+      '}',
+    ].join('\n'));
+    return [...filler, ...targets].join('\n');
+  };
+
+  it('gives every file a first focus step before any file takes a bigger one', async () => {
+    const content = source();
+    const ladder = (await buildFocus(content, 'a.ts', 'target'))!;
+    const t2 = estimateFast(compressTier2(compressTier1(content, 'typescript'), 'typescript'));
+    const first = estimateFast(ladder[0]);
+    const biggest = estimateFast(ladder[ladder.length - 1]);
+    // The scenario only means something if the biggest step costs more than a second first step.
+    expect(biggest - t2).toBeGreaterThan(2 * (first - t2));
+
+    const top = 'export const small = 1;';
+    const effectiveBudget = 2 * first + estimateFast(top) + 40;
+    const { included } = await fitToBudget(
+      [makeRanked('src/fairTop.ts', top, 0.95), makeRanked('src/fairA.ts', content, 0.9), makeRanked('src/fairB.ts', content, 0.8)],
+      { pinned: [], compress: 'partial', upgradeOrder: 'depth', focusQuery: 'target' },
+      { maxTokens: effectiveBudget, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget },
+    );
+    expect(included.map(f => f.compressionLevel).slice(1)).toEqual(['focus', 'focus']);
   });
 });

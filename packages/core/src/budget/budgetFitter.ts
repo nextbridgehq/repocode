@@ -291,7 +291,7 @@ export async function fitToBudget(
     // Jump straight to the richest representation that fits. Stepping one level at a time would
     // stop at the first step that does not fit, even when a richer one costs less (tier3 can
     // be cheaper than tier2).
-    for (const entry of selected) {
+    const deepen = (entry: Selection) => {
       for (let next = 0; next < entry.reprIndex; next++) {
         const delta = accurateFor(entry, next) - accurateFor(entry, entry.reprIndex);
         if (delta <= headroom) {
@@ -300,7 +300,24 @@ export async function fitToBudget(
           break;
         }
       }
+    };
+    // The top file goes as deep as it can first: it is the one the query ranked as the answer.
+    // Below it, every file gets its smallest focus step before any file takes a bigger one. Taking
+    // each file to its richest step in rank order let one large focus drain the leftover and left
+    // the file ranked just below it a bare skeleton (matplotlib-25332: gold file at 9% while the
+    // file above it took 9k tokens of extra bodies).
+    for (const entry of selected) if (entry.rankPosition === 1) deepen(entry);
+    for (const entry of selected) {
+      if (entry.rankPosition === 1) continue;
+      const floor = entry.reprs.map(r => r.level).lastIndexOf('focus');
+      if (floor < 0 || entry.reprIndex <= floor) continue;
+      const delta = accurateFor(entry, floor) - accurateFor(entry, entry.reprIndex);
+      if (delta <= headroom) {
+        headroom -= delta;
+        entry.reprIndex = floor;
+      }
     }
+    for (const entry of selected) deepen(entry);
   }
   for (let changed = true; changed;) {
     changed = false;
