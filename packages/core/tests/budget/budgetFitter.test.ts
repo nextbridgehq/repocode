@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
 import { estimateFast } from '../../src/tokens/fastEstimator.js';
+import { estimateAccurateBatch } from '../../src/tokens/accurateEstimator.js';
 import { buildFocus } from '../../src/budget/focus.js';
 import { compressTier1, compressTier2 } from '../../src/budget/compression.js';
 import { ZERO_SIGNALS } from '../helpers.js';
@@ -675,5 +676,48 @@ describe('fitToBudget focus never costs a file its whole-file upgrade', () => {
       { maxTokens: effectiveBudget, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget },
     );
     expect(included.find(f => f.path === 'src/wMedium.ts')?.compressionLevel).toBe('none');
+  });
+});
+
+describe('fitToBudget rank-1 whole file is deferred when it would take most of the budget', () => {
+  // A wrong rank-1 file delivered whole used to starve the files below it (matplotlib: the gold
+  // file at rank 2 or 3 stayed a skeleton). The top file now gets focus first and goes whole only
+  // from what the others leave.
+  const large = Array.from({ length: 30 }, (_, i) => `export function filler${i}(x: number) {\n  const a = x + ${i};\n  return a * ${i};\n}`)
+    .concat(Array.from({ length: 8 }, (_, k) => [
+      `export function target_${k}(x: number) {`,
+      ...Array.from({ length: 30 }, (_, j) => `  const step${j} = compute_${k}_${j}(x) + ${j};`),
+      '  return x;',
+      '}',
+    ].join('\n'))).join('\n');
+  const medium = Array.from({ length: 25 }, (_, i) => `export function mid${i}(x: number) {\n  const a = x + ${i};\n  const b = a * ${i};\n  return b - a;\n}`).join('\n');
+  const t2 = (c: string) => estimateFast(compressTier2(compressTier1(c, 'typescript'), 'typescript'));
+  // Whole files are charged at their tiktoken count, not the fast estimate.
+  const accurate = async (c: string, name: string) =>
+    (await estimateAccurateBatch([makeRanked(name, c).absolutePath])).values().next().value as number;
+  const run = (effectiveBudget: number, focusQuery?: string) => fitToBudget(
+    [makeRanked('src/r1Large.ts', large, 0.95), makeRanked('src/r1Medium.ts', medium, 0.8)],
+    { pinned: [], compress: 'partial', upgradeOrder: 'depth', focusQuery },
+    { maxTokens: effectiveBudget, reserveForResponse: 0, reserveForPrompt: 0, effectiveBudget },
+  );
+
+  it('gives the second file its whole upgrade when the top file would otherwise take the budget', async () => {
+    const budget = (await accurate(large, 'src/r1Large.ts')) + t2(medium) + 50;
+    expect(await accurate(large, 'src/r1Large.ts')).toBeGreaterThan(budget * 0.6);
+    expect(estimateFast(medium) - t2(medium)).toBeGreaterThan(50); // medium cannot go whole in the leftover of a whole top file
+    const { included } = await run(budget, 'target');
+    expect(included.find(f => f.path === 'src/r1Medium.ts')?.compressionLevel).toBe('none');
+    expect(included.reduce((n, f) => n + f.accurateTokens, 0)).toBeLessThanOrEqual(budget);
+  });
+
+  it('still delivers the top file whole when there is room for everything', async () => {
+    const { included } = await run((await accurate(large, 'src/r1Large.ts')) + (await accurate(medium, 'src/r1Medium.ts')) + 100, 'target');
+    expect(included.map(f => f.compressionLevel)).toEqual(['none', 'none']);
+  });
+
+  it('is unchanged without a focusQuery', async () => {
+    const budget = (await accurate(large, 'src/r1Large.ts')) + t2(medium) + 50;
+    const { included } = await run(budget);
+    expect(included.find(f => f.path === 'src/r1Large.ts')?.compressionLevel).toBe('none');
   });
 });

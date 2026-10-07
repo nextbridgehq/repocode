@@ -51,6 +51,9 @@ const LEVEL_ORDER: CompressionLevel[] = ['none', 'tier1-regex', 'focus', 'tier2-
 
 /** Only the files at the top of the ranking are worth parsing, and only when whole they are costly. */
 const FOCUS_TOP_K = 30;
+/** A top-ranked file whose whole text costs more than this share of the budget is upgraded to whole
+ *  only after every other file has been upgraded. */
+const RANK1_WHOLE_SHARE = 0.6;
 const FOCUS_MIN_TOKENS = 1500;
 
 /** Richest first; within a level (several focus steps) the larger one first. */
@@ -294,6 +297,7 @@ export async function fitToBudget(
     const deepen = (entry: Selection, allowFocus: boolean) => {
       for (let next = 0; next < entry.reprIndex; next++) {
         if (!allowFocus && entry.reprs[next].level === 'focus') continue;
+        if (entry === deferred && !finalPass && entry.reprs[next].tokens >= deferredWholeTokens * 0.9) continue;
         const delta = accurateFor(entry, next) - accurateFor(entry, entry.reprIndex);
         if (delta <= headroom) {
           headroom -= delta;
@@ -302,6 +306,17 @@ export async function fitToBudget(
         }
       }
     };
+    // With a query, a top-ranked file that would take most of the budget whole goes last: when it is
+    // the wrong file, whole delivery starved the gold file ranked below it (matplotlib). It still
+    // gets focus first and goes whole from whatever the others leave.
+    const top = selected[0];
+    const topWhole = top?.reprs.find(r => r.level === 'none');
+    const deferred = options.focusQuery && top?.rankPosition === 1 && top.reprs.some(r => r.level === 'focus')
+      && topWhole && accurateFor(top, top.reprs.indexOf(topWhole)) > budget.effectiveBudget * RANK1_WHOLE_SHARE
+      ? top : null;
+    // Tier 1 often costs the same as the whole file, so "whole" here means any representation near it.
+    const deferredWholeTokens = deferred?.reprs.find(r => r.level === 'none')?.tokens ?? 0;
+    let finalPass = false;
     // 1. Everything that exists without focus, in rank order: exactly what a run without focus
     //    delivers. Focus must only spend what this leaves — benchmark: six instances lost a whole
     //    gold file because focus steps for the file above it were taken first.
@@ -321,6 +336,8 @@ export async function fitToBudget(
     }
     // 3. Bigger focus steps, in rank order.
     for (const entry of selected) deepen(entry, true);
+    finalPass = true;
+    if (deferred) deepen(deferred, true);
   }
   for (let changed = true; changed;) {
     changed = false;
