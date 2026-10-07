@@ -59,11 +59,15 @@ export function locationBoost(
   return score;
 }
 
+/** A bare `import a.b [as c]` line: reproduction code naming the public module it exercises, not the file at fault. */
+const PLAIN_IMPORT_LINE = /^[^\S\n]*(?:>>>[^\S\n]*)?import[^\S\n]+[\w.]+(?:[^\S\n]+as[^\S\n]+\w+)?(?:[^\S\n]*,[^\S\n]*[\w.]+(?:[^\S\n]+as[^\S\n]+\w+)?)*[^\S\n]*$/gm;
+
 /** Repository paths the query names outright, either as a path (`sklearn/utils/validation.py`)
- *  or as a dotted module (`sklearn.utils.validation`). Returned as slash paths without extension. */
+ *  or as a dotted module (`sklearn.utils.validation`). Returned as slash paths without extension.
+ *  A module only ever plainly imported (`import matplotlib.pyplot as plt`) is not a mention. */
 export function mentionedPaths(query: string): string[] {
   const out = new Set<string>();
-  for (const m of query.match(/[A-Za-z0-9_][A-Za-z0-9_./-]*[/.][A-Za-z0-9_./-]*[A-Za-z0-9_]/g) ?? []) {
+  for (const m of query.replace(PLAIN_IMPORT_LINE, '').match(/[A-Za-z0-9_][A-Za-z0-9_./-]*[/.][A-Za-z0-9_./-]*[A-Za-z0-9_]/g) ?? []) {
     const noExt = m.replace(/\.(py|pyi|ts|tsx|js|jsx|mjs|go|rs|rb|java|kt|cs|php|c|h|cc|cpp|hpp|swift)$/, '');
     const asPath = noExt.includes('/') ? noExt : noExt.replace(/\./g, '/');
     // A single dot is too often prose ("e.g", "v1.2") to treat as a module reference.
@@ -72,10 +76,19 @@ export function mentionedPaths(query: string): string[] {
   return [...out];
 }
 
-/** True when `filePath` is the file (or package `__init__`/`index`) a mention refers to. */
+/** Leading directories that hold a package's source but are not part of its import path. */
+const SOURCE_ROOTS = new Set(['lib', 'src', 'source', 'python']);
+
+/** True when `filePath` is the file (or package `__init__`/`index`) a mention refers to. A mention
+ *  can also carry a prefix the repo path lacks, such as the installed copy a traceback names
+ *  (`/usr/lib/python3/site-packages/matplotlib/colors`); that matches when the whole package-relative
+ *  path of the file (two segments or more) is the tail of the mention. */
 export function matchesMention(filePath: string, mention: string): boolean {
   const p = filePath.replace(/\.[^./]+$/, '');
-  return p === mention || p.endsWith('/' + mention)
+  if (p === mention || p.endsWith('/' + mention)
     || p === mention + '/__init__' || p.endsWith('/' + mention + '/__init__')
-    || p === mention + '/index' || p.endsWith('/' + mention + '/index');
+    || p === mention + '/index' || p.endsWith('/' + mention + '/index')) return true;
+  const segs = p.replace(/\/(?:__init__|index)$/, '').split('/');
+  while (segs.length > 2 && SOURCE_ROOTS.has(segs[0])) segs.shift();
+  return segs.length >= 2 && mention.endsWith('/' + segs.join('/'));
 }
