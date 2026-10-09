@@ -6,6 +6,7 @@ import type { RepoCodeConfig, PackResult, TokenBudget, ExcludedFile, TUIFile, TU
 import { discoverFiles } from './discovery/fileDiscovery.js';
 import { rankPass1 } from './ranking/pass1Ranker.js';
 import { rankPass2, densityScaleFor } from './ranking/pass2Ranker.js';
+import { neighborBoost, NEIGHBOR_BOOST_DEFAULTS } from './ranking/neighborBoost.js';
 import { buildGraph } from './ranking/graphBuilder.js';
 import { fitToBudget } from './budget/budgetFitter.js';
 import { computeBudget } from './budget/computeBudget.js';
@@ -131,10 +132,12 @@ export async function runPipeline(
   // can reuse it instead of re-reading all source files a second time.
   let prebuiltImportMap: Map<string, string[]> | undefined;
   let cachedCentralityMap: Map<string, number> | undefined;
+  let importsByFile: Record<string, string[]> | undefined;
   if (config.git && config.graphDepth > 0) {
     const earlyGraph = await buildGraph(config.root, config.ignore, cache);
     prebuiltImportMap = new Map(Object.entries(earlyGraph.imports));
     cachedCentralityMap = earlyGraph.centralityMap;
+    importsByFile = earlyGraph.imports;
   }
 
   // Stage 1: Discovery
@@ -244,7 +247,13 @@ export async function runPipeline(
   // Stage 1.5: Graph analysis — centrality map (reuse pre-stage result if git mode already called buildGraph)
   let centralityMap: Map<string, number> | undefined;
   if (config.graphDepth > 0) {
-    centralityMap = cachedCentralityMap ?? (await buildGraph(config.root, config.ignore, cache)).centralityMap;
+    if (cachedCentralityMap) {
+      centralityMap = cachedCentralityMap;
+    } else {
+      const graph = await buildGraph(config.root, config.ignore, cache);
+      centralityMap = graph.centralityMap;
+      importsByFile = graph.imports;
+    }
   }
 
   // Stage 2: Pass 1 Ranking
@@ -297,8 +306,12 @@ export async function runPipeline(
   const pass2Ranked = rankPass2(
     reranked, config.ranking.pinned, centralityMap, densityScaleFor(reranked), !config.query,
   );
+  // With a query, files one import away from the top matches move up (see neighborBoost).
+  const ordered = config.query && importsByFile
+    ? neighborBoost(pass2Ranked, importsByFile, { pinned: config.ranking.pinned, ...NEIGHBOR_BOOST_DEFAULTS })
+    : pass2Ranked;
 
-  const { candidates, dropped, budget } = computeBudget(pass2Ranked, config, instructionContent);
+  const { candidates, dropped, budget } = computeBudget(ordered, config, instructionContent);
   allExcluded.push(...dropped);
 
   if (config.verbose && candidates.length > 2000) {
