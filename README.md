@@ -345,7 +345,9 @@ Commands
 
 ## How ranking is evaluated
 
-Ranking is evaluated internally against SWE-bench Lite: given a bug report and a token budget, does the packed output contain the file the accepted fix actually edits, against oracle and random-selection controls. We don't publish a single retrieval-accuracy number, because results vary considerably by repository and task — the evaluation harness is what's meant to be trusted, not a headline figure, so run it against your own codebase rather than taking any tool's accuracy claim (ours included) on faith.
+Ranking is evaluated against SWE-bench: given a bug report and a token budget, does the packed output contain the code the accepted fix actually changes, against oracle and random-selection controls. On 274 SWE-bench Lite instances at a 50k-token budget, RepoCode's pack held every changed region of the patch for **72.6%** of instances with the whole issue as the query (63.5% with just the title), against 25.5% for Repomix when a person hands it the files the issue names, and 0.0% for Repomix packing in file order. On 147 instances from SWE-bench Verified that were never used for tuning it scored 70.1% and 63.3%.
+
+Results vary a lot by repository and budget (100k: 82.1%; 25k: 52.6%), these are retrieval results and not fix rates, and the comparison with Repomix is between tools with different jobs. [BENCHMARKS.md](BENCHMARKS.md) has the methodology, every table and the caveats, and you should still try it on your own codebase before taking any tool's accuracy claim (ours included) on faith.
 
 ## FAQ
 

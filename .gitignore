@@ -6,9 +6,9 @@ docs/
 # generated pack output
 repocode-output.*
 
-# benchmark harness and results: kept local only. The methodology and the numbers it
-# produces are not published; results are regenerated per run and are only meaningful
-# alongside the commit that produced them.
+# benchmark harness and raw results: kept local. The methodology and headline numbers are
+# published in BENCHMARKS.md; the harness itself and its per-run CSVs are not, because the
+# results are only meaningful alongside the commit that produced them.
 packages/.cache/
 packages/stats/
 packages/bench/
