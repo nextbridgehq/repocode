@@ -1,0 +1,23 @@
+{
+  "name": "@repocode/bench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Benchmark suite for repocode vs competitors on SWE-bench Lite",
+  "type": "module",
+  "scripts": {
+    "start": "tsc && node ./dist/index.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@repocode/core": "workspace:*",
+    "commander": "^12.0.0",
+    "csv-stringify": "^6.4.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -17,7 +17,7 @@ budget fitting.
 | `packages/cli` | `repocode` | Commander-based CLI. `bin: repocode`. |
 | `packages/mcp` | `@repocode/mcp` | MCP server. `bin: repocode-mcp`. |
 | `packages/github-action` | not on npm — consumed as `uses: owner/repo@tag` via the root `action.yml` | GitHub Action that fails a PR's check when the diff plus its import context doesn't fit a budget. Plain ESM, zero dependencies, shells out to the published CLI. |
-| `packages/bench` | gitignored | SWE-bench Lite harness. Not tracked in git — exists locally, methodology stays private. |
+| `packages/bench` | `private` — never on npm | SWE-bench harness behind [BENCHMARKS.md](BENCHMARKS.md). Tracked; see its [README](packages/bench/README.md). |
 | `packages/stats` | gitignored | Raw benchmark result CSVs. Data, not code — local only, never committed. |
 
 The pack pipeline is `packages/core/src/pipeline.ts`, and reading it top to bottom is the
@@ -32,7 +32,7 @@ pnpm install
 pnpm audit --audit-level=high   # dependency vulnerability gate
 pnpm -r build       # tsc, per package
 pnpm -r typecheck   # tsc --noEmit
-pnpm -r test        # vitest run — 841 passing, 1 skipped (plus bench's 32 if it exists locally)
+pnpm -r test        # vitest run — 977 passing, 1 skipped (core 625, cli 207, mcp 62, bench 45, github-action 38)
 pnpm --filter @repocode/core test:perf   # synthetic 10k-file pack, wall-clock regression gate —
                                          # CI-only, not part of `pnpm -r test`
 ```
@@ -75,12 +75,24 @@ commit them, and do not "helpfully" un-ignore the directory.
 
 ## Benchmarking
 
-`packages/bench` (gitignored, local only — see [Layout](#layout)) measures file recall on
-SWE-bench Lite against oracle and random-selection controls. It is not published: the
-methodology and the numbers it produces stay off GitHub by design, so this file does not
-duplicate them. If you're changing ranking, run the harness locally before and after and
-compare against the prior local results — do not ship a ranking change on reasoning alone.
-`scripts/benchmark-chart.js` (also gitignored) regenerates a results table from the local CSVs.
+`packages/bench` measures, on SWE-bench instances, whether the packed output holds the code a
+patch changes, against oracle and random-selection controls, and against Repomix. The method,
+the metrics and the published numbers are in [BENCHMARKS.md](BENCHMARKS.md); how to run the
+harness is in [packages/bench/README.md](packages/bench/README.md). This file does not
+duplicate either, so there is one place to update when they change.
+
+Rules that cost time to learn:
+
+- **Measure ranking and budget changes on the benchmark, not on reasoning.** Run the previous
+  commit and the new one on the same instances and compare `patch_ready` and `usable`. Gold-file
+  rank and MRR are not a stand-in: a change that raised R@1 from 25.7% to 35.9% made packs worse.
+- **The harness is deterministic**, so a difference between two runs on the same instances is a
+  real effect of the code. A single instance is a real change, but a small sample; check a held-out
+  set (`BENCH_DATASET=princeton-nlp/SWE-bench_Verified`) before believing a gain.
+- **Runs are long** (hours for a full pass). Shard across processes and keep shards on different
+  checkouts; there is no resume.
+- **Results stay local.** `packages/stats` (CSVs) and `packages/.cache` (cloned repos) are
+  gitignored, as is `scripts/benchmark-chart.js`. Publish a number by updating BENCHMARKS.md.
 
 ## Dogfooding
 

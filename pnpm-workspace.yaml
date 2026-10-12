@@ -2,8 +2,19 @@ packages:
   - 'packages/*'
 onlyBuiltDependencies:
   - esbuild
+auditConfig:
+  ignoreGhsas:
+    # braces <=3.0.3 stack exhaustion on deeply nested brace patterns. No patched release exists
+    # (3.0.3 is the latest). Reached only through globby/fast-glob in core, with patterns taken
+    # from the user's own config and CLI flags, never from the repository being packed.
+    # Remove this entry once braces publishes a fix.
+    - GHSA-vfj7-8cjw-p6xm
 overrides:
   '@hono/node-server@<2.0.5': '>=2.0.5'
+  '@modelcontextprotocol/sdk@<1.31.0': '>=1.31.0'
+  fast-uri@>=4.0.0 <4.1.4: '>=4.1.4'
+  proxy-addr@<2.0.8: '>=2.0.8'
+  source-map-js@<1.2.2: '>=1.2.2'
   brace-expansion@<1.1.16: '>=1.1.16'
   brace-expansion@<1.1.17: '>=1.1.17'
   brace-expansion@<1.1.18: '>=1.1.18'

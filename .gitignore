@@ -6,12 +6,11 @@ docs/
 # generated pack output
 repocode-output.*
 
-# benchmark harness and raw results: kept local. The methodology and headline numbers are
-# published in BENCHMARKS.md; the harness itself and its per-run CSVs are not, because the
-# results are only meaningful alongside the commit that produced them.
+# benchmark runs: the harness (packages/bench) is tracked and the headline numbers are in
+# BENCHMARKS.md. Per-run CSVs and the cloned-repo cache stay local, because a result is only
+# meaningful alongside the commit that produced them.
 packages/.cache/
 packages/stats/
-packages/bench/
 scripts/benchmark-chart.js
 
 # stable-order state: per-checkout cache of the previous output ordering, rebuilt on demand

@@ -123,10 +123,22 @@ Repositories with fewer than ten instances are noisy: one instance moves their f
 
 ## Reproducing
 
-The benchmark harness is not part of this repository. The numbers above were produced by an internal
-harness that clones each repository at the instance's base commit, runs each arm at the stated budget,
-and scores the delivered text against the patch as described under "What is measured". The dataset is
-public: `princeton-nlp/SWE-bench_Lite` and `princeton-nlp/SWE-bench_Verified`.
+The harness that produced these numbers is in this repository: [`packages/bench`](packages/bench).
+It clones each repository at the instance's base commit, runs each arm at the stated budget, and
+scores the delivered text against the patch as described under "What is measured". The datasets are
+public (`princeton-nlp/SWE-bench_Lite` and `princeton-nlp/SWE-bench_Verified`), and
+[its README](packages/bench/README.md) has the commands.
+
+```bash
+pnpm install && pnpm -r build
+node packages/bench/dist/index.js --budgets 50000 --arms repocode-query-full,repomix-hinted --limit 20
+```
+
+The harness is deterministic, so a rerun on the same build and the same instances should match a
+published row exactly. Two things can legitimately differ from the figures above: the Repomix
+version (the Repomix arm here used 1.14.0) and the set of instances (the 274 used here are a fixed
+subset of Lite's 300; `--limit` takes the first ones in dataset order, not that subset). The raw CSVs
+stay local, since a result is only meaningful beside the commit that produced it.
 
 To check RepoCode against your own codebase, the most direct test is the one the tool is built for:
 
