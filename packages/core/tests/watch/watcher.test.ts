@@ -62,9 +62,11 @@ describe('startWatch', () => {
   it('collapses rapid sequential writes into one debounced repack', async () => {
     write('a.ts', 'export const a = 1;\n');
     const repacks: { result: PackResult; changed: string[] }[] = [];
+    // The debounce is long relative to the 20ms gaps so that a loaded machine (the whole workspace
+    // test suite runs in parallel) cannot stretch a gap past it and split the burst in two.
     const handle = await startWatch({
       config: makeConfig(),
-      debounceMs: 100,
+      debounceMs: 400,
       onRepack: (result, changed) => { repacks.push({ result, changed }); },
     });
     expect(repacks.length).toBe(1); // initial pack
@@ -79,8 +81,8 @@ describe('startWatch', () => {
     // happens at all is a positive outcome, so wait for it rather than for a fixed duration.
     await waitFor(() => repacks.length >= 2);
     // That the three writes collapsed into *one* repack is a negative outcome, so it needs a
-    // settle window: give any extra repacks well past the 100ms debounce to show up.
-    await wait(300);
+    // settle window: give any extra repacks well past the 400ms debounce to show up.
+    await wait(900);
     expect(repacks.length).toBe(2); // initial + exactly one debounced repack
     await handle.stop();
   });
