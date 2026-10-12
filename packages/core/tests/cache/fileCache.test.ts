@@ -153,6 +153,50 @@ describe('FileCache concurrent writes', () => {
     renameSpy.mockRestore();
   });
 
+  // On Windows, renaming over cache.json fails with EPERM while another process has it open for
+  // reading, and readers do not take the lock. Seen as a failed pack when two repocode processes
+  // (the MCP test files, sharing one fixture) ran against the same repository at once.
+  it('does not fail the pack when the cache file is held open by another process', () => {
+    const cache = FileCache.load(tmpDir);
+    cache.set('a.ts', 'content-a', { accurateTokens: 1 });
+
+    const eperm = Object.assign(new Error("EPERM: operation not permitted, rename 'x'"), { code: 'EPERM' });
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw eperm; });
+    const messages: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((msg: string | Uint8Array) => {
+      messages.push(String(msg));
+      return true;
+    });
+
+    expect(() => cache.save()).not.toThrow();
+
+    renameSpy.mockRestore();
+    stderrSpy.mockRestore();
+    expect(messages.join('')).toMatch(/could not write cache/i);
+    // Nothing was written, and the entry is still pending for the next save.
+    cache.save();
+    expect(FileCache.load(tmpDir).get('a.ts', 'content-a')).toBeDefined();
+  });
+
+  it('retries a transient rename failure before giving up', () => {
+    const cache = FileCache.load(tmpDir);
+    cache.set('a.ts', 'content-a', { accurateTokens: 1 });
+
+    const real = fs.renameSync.bind(fs);
+    let calls = 0;
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      calls++;
+      if (calls === 1) throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+      real(from, to);
+    });
+
+    cache.save();
+    renameSpy.mockRestore();
+
+    expect(calls).toBeGreaterThan(1);
+    expect(FileCache.load(tmpDir).get('a.ts', 'content-a')).toBeDefined();
+  });
+
   it('skips the write with a warning when the lock is already held', () => {
     fs.mkdirSync(path.join(tmpDir, '.repocode'), { recursive: true });
     const cachePath = path.join(tmpDir, '.repocode', 'cache.json');

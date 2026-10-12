@@ -34,6 +34,10 @@ const LOCK_OPTIONS = {
 // so the backoff schedule lives here. Totals ~1.8s before giving up.
 const LOCK_RETRY_DELAYS_MS = [100, 150, 225, 340, 500, 500];
 
+/** Attempts at the final rename, and the pause (multiplied by the attempt number) between them. */
+const WRITE_ATTEMPTS = 3;
+const WRITE_RETRY_DELAY_MS = 25;
+
 /** Blocks the thread without a busy loop. Node permits this on the main thread. */
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -205,11 +209,28 @@ export class FileCache {
 
     try {
       const merged = this.mergeWithDisk();
-      atomicWriteFileSync(this.cachePath, JSON.stringify(merged, null, 2));
+      const body = JSON.stringify(merged, null, 2);
+      // On Windows the rename fails with EPERM/EBUSY while another process has cache.json open
+      // for reading, and readers do not take the lock. That clears within milliseconds, so retry
+      // briefly, and if it does not, drop the write: the cache is an optimisation and a failed
+      // save must never fail the pack (parallel MCP test files hit exactly this).
+      for (let attempt = 1; ; attempt++) {
+        try {
+          atomicWriteFileSync(this.cachePath, body);
+          break;
+        } catch (err: unknown) {
+          if (attempt >= WRITE_ATTEMPTS) throw err;
+          sleepSync(WRITE_RETRY_DELAY_MS * attempt);
+        }
+      }
       this.data = merged;
       this.dirty = false;
       this.writtenKeys.clear();
       this.prunedKeys.clear();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      // `dirty` stays set, so the next save() tries again with the same pending entries.
+      process.stderr.write(`[repocode] warning: could not write cache, continuing without it: ${message}\n`);
     } finally {
       try { release(); } catch { /* lock already released or broken; nothing to undo */ }
     }
