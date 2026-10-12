@@ -1,6 +1,6 @@
 {
   "name": "repocode",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "CLI to analyze, rank, and pack a repository into AI-ready context for LLMs and coding assistants",
   "keywords": [
     "ai",

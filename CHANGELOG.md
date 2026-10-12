@@ -9,6 +9,10 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-10-12
+
 ### Added
 
 - `--query-file <path>` reads the query from a file, so a whole issue or stack trace can drive ranking. It is too long for `--query` on Windows.
@@ -106,6 +110,7 @@ Ranking was evaluated internally against SWE-bench Lite (held-out instances, 50k
 
 ---
 
+[0.4.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.4.0
 [0.3.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nextbridgehq/repocode/releases/tag/v0.1.0

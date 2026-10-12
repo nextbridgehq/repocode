@@ -1,6 +1,6 @@
 {
   "name": "@repocode/core",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Core engine for RepoCode — repository analysis, ranking, token-budgeting, and AI-ready context assembly",
   "keywords": [
     "ai",

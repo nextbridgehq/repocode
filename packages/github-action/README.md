@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20   # required -- repocode needs Node >=20 on PATH for npx to find
-      - uses: nextbridgehq/repocode@v0.3.0
+      - uses: nextbridgehq/repocode@v0.4.0
         with:
           budget: 100k
 ```
